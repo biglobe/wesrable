@@ -15,7 +15,7 @@ connects to a Bluetooth device, and requests no `INTERNET` permission at all.
 | BLE landmarks | `BluetoothLeScanner` observer scan | No `connectGatt()` — decodes iBeacon and Eddystone payloads directly from the advertisement bytes |
 | Range to each landmark | Log-distance path-loss model | Converts RSSI → estimated meters; noisy but connection-free |
 | 2D position (with calibrated anchors) | Least-squares multilateration | Needs ≥3 landmarks with known coordinates (see Calibration below) |
-| 2D position (always-on fallback) | Pedestrian dead reckoning | Step detection (accelerometer or `TYPE_STEP_DETECTOR`) × heading, integrated from a start point, with the full walked path retained and drawn as a trail. Zero radios required. |
+| 2D position (always-on fallback) | Pedestrian dead reckoning | Self-controlled step detection (peak detection on `TYPE_LINEAR_ACCELERATION`, or raw `TYPE_ACCELEROMETER` as a fallback) × heading, integrated from a start point, with the full walked path retained and drawn as a trail. Zero radios required. |
 | Floor / relative altitude | `TYPE_PRESSURE` barometer | ~3 m per floor heuristic, relative to session start |
 | Room identification | WiFi/BLE RSSI + magnetic-field fingerprint matching | Weighted k-NN against a map you record once by walking each room; no coordinates needed (see below) |
 
@@ -106,10 +106,13 @@ app/src/main/java/com/wesrable/positioning/
   `neverForLocation`.
 - `ACCESS_WIFI_STATE` / `CHANGE_WIFI_STATE` — read scan results / request a
   scan.
-- `ACTIVITY_RECOGNITION` (API 29+) — required for `TYPE_STEP_DETECTOR`/
-  `TYPE_STEP_COUNTER` to deliver any events at all; without it those sensors
-  register successfully but silently never fire. `StepDetector` falls back
-  to accelerometer-based step detection if this is denied.
+- **No `ACTIVITY_RECOGNITION` needed.** Step detection is done with our own
+  peak-detection algorithm over `TYPE_LINEAR_ACCELERATION`/
+  `TYPE_ACCELEROMETER` rather than the OS's hardware `TYPE_STEP_DETECTOR`,
+  which requires that permission. This also sidesteps `TYPE_STEP_DETECTOR`'s
+  OEM-variable firmware behavior — some devices need several warm-up steps
+  before they start reporting, and some drop out unpredictably — which made
+  the step counter feel unresponsive.
 - **No `INTERNET`, no `ACCESS_NETWORK_STATE`.** The app cannot phone home
   even if it wanted to.
 - `BLUETOOTH_CONNECT` is intentionally **not** requested — the BLE scanner
