@@ -1,10 +1,14 @@
 package com.wesrable.positioning.sensors
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlinx.coroutines.channels.awaitClose
@@ -16,15 +20,25 @@ import kotlinx.coroutines.flow.callbackFlow
  * pedestrian dead reckoning. Prefers the hardware TYPE_STEP_DETECTOR (a
  * low-power on-chip pedometer); falls back to accelerometer-magnitude peak
  * detection with the Weinberg dynamic step-length formula when the
- * dedicated sensor is absent. Nothing here touches a radio.
+ * dedicated sensor is absent, or when ACTIVITY_RECOGNITION isn't granted —
+ * on API 29+ the step sensors deliver no events without that permission,
+ * even though [Sensor] presence checks still succeed. Nothing here touches
+ * a radio.
  */
-class StepDetector(context: Context) {
+class StepDetector(private val context: Context) {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val hardwareStepSensor: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
     private val accelerometer: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+    private val hasActivityRecognitionPermission: Boolean
+        get() = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACTIVITY_RECOGNITION,
+            ) == PackageManager.PERMISSION_GRANTED
 
     private companion object {
         const val DEFAULT_STEP_LENGTH_METERS = 0.75f
@@ -35,7 +49,7 @@ class StepDetector(context: Context) {
     }
 
     fun steps(): Flow<Float> = callbackFlow {
-        if (hardwareStepSensor != null) {
+        if (hardwareStepSensor != null && hasActivityRecognitionPermission) {
             val listener = object : SensorEventListener {
                 override fun onSensorChanged(event: SensorEvent) {
                     trySend(DEFAULT_STEP_LENGTH_METERS)
