@@ -20,6 +20,7 @@ import com.wesrable.positioning.ui.components.OrientationCard
 import com.wesrable.positioning.ui.components.PermissionCard
 import com.wesrable.positioning.ui.components.PositionCard
 import com.wesrable.positioning.ui.components.RoomFingerprintCard
+import com.wesrable.positioning.ui.components.StrideCalibrationCard
 import com.wesrable.positioning.ui.components.WifiListCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,6 +75,17 @@ fun MainScreen(
                     relocalizationUncertaintyMeters = state.relocalizationUncertaintyMeters,
                     storedWaypointCount = state.storedWaypointCount,
                     onForgetMap = { viewModel.forgetMap() },
+                )
+            }
+            item {
+                StrideCalibrationCard(
+                    strideFactor = state.strideFactor,
+                    calibrating = state.calibratingStride,
+                    walkedMeters = state.calibrationWalkedMeters,
+                    onBegin = { viewModel.beginStrideCalibration() },
+                    onCancel = { viewModel.cancelStrideCalibration() },
+                    onFinish = { viewModel.finishStrideCalibration(it) },
+                    onReset = { viewModel.resetStrideCalibration() },
                 )
             }
             item {

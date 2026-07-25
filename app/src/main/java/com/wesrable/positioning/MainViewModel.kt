@@ -25,6 +25,7 @@ import com.wesrable.positioning.sensors.BarometerSensor
 import com.wesrable.positioning.sensors.MagnetometerSensor
 import com.wesrable.positioning.sensors.OrientationSensor
 import com.wesrable.positioning.sensors.StepDetector
+import com.wesrable.positioning.sensors.StrideCalibration
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -43,6 +44,9 @@ data class UiState(
     val position: PositionEstimate = PositionEstimate(0.0, 0.0, PositionSource.UNAVAILABLE, 0.0),
     val stepCount: Int = 0,
     val pathLengthMeters: Double = 0.0,
+    val strideFactor: Float = 1f,
+    val calibratingStride: Boolean = false,
+    val calibrationWalkedMeters: Double = 0.0,
     val trail: List<Pair<Double, Double>> = emptyList(),
     val closurePoints: List<Pair<Double, Double>> = emptyList(),
     val storedTrail: List<Pair<Double, Double>> = emptyList(),
@@ -84,6 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val engine = PositioningEngine()
     private val fingerprintStore = FingerprintStore(application)
     private val mapStore = MapStore(application)
+    private val strideCalibration = StrideCalibration(application)
 
     /** Populated via a one-time site calibration; empty by default because
      * anchor coordinates cannot be derived from RF alone (see README). */
@@ -168,7 +173,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             },
             viewModelScope.launch {
                 stepDetector.steps().resilient().collect { stepLength ->
-                    engine.onStep(stepLength, latestOrientation.azimuthDeg)
+                    engine.onStep(stepLength * strideCalibration.factor, latestOrientation.azimuthDeg)
                     // Offered per step rather than per scan: the engine keys
                     // waypoints off distance walked, which only changes here.
                     engine.observeSignals(
@@ -273,6 +278,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * [PositioningEngine.magneticClosureEnabled] for why it is the user's
      * call rather than a default.
      */
+    /** Path length when stride calibration began; null when not calibrating. */
+    private var calibrationStartPathLength: Double? = null
+
+    fun beginStrideCalibration() {
+        calibrationStartPathLength = engine.pathLengthMeters
+        _uiState.update { it.copy(calibratingStride = true, calibrationWalkedMeters = 0.0) }
+    }
+
+    fun cancelStrideCalibration() {
+        calibrationStartPathLength = null
+        _uiState.update { it.copy(calibratingStride = false, calibrationWalkedMeters = 0.0) }
+    }
+
+    /**
+     * Ends calibration, fitting the stride factor so the walk just taken comes
+     * out as [actualMeters]. Fitted against counted steps, so it absorbs
+     * missed ones as well as an overlong stride estimate.
+     */
+    fun finishStrideCalibration(actualMeters: Double) {
+        val start = calibrationStartPathLength
+        if (start != null) {
+            strideCalibration.record(actualMeters, engine.pathLengthMeters - start)
+        }
+        calibrationStartPathLength = null
+        _uiState.update {
+            it.copy(
+                calibratingStride = false,
+                calibrationWalkedMeters = 0.0,
+                strideFactor = strideCalibration.factor,
+            )
+        }
+    }
+
+    fun resetStrideCalibration() {
+        strideCalibration.reset()
+        _uiState.update { it.copy(strideFactor = strideCalibration.factor) }
+    }
+
     fun setMagneticClosureEnabled(enabled: Boolean) {
         engine.magneticClosureEnabled = enabled
         _uiState.update { it.copy(magneticClosureEnabled = enabled) }
@@ -318,6 +361,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 position = position,
                 stepCount = engine.stepCount,
                 pathLengthMeters = engine.pathLengthMeters,
+                strideFactor = strideCalibration.factor,
+                calibrationWalkedMeters = calibrationStartPathLength
+                    ?.let { start -> engine.pathLengthMeters - start } ?: 0.0,
                 trail = engine.trail,
                 closurePoints = engine.closurePoints,
                 relocalizationState = engine.relocalizationState,

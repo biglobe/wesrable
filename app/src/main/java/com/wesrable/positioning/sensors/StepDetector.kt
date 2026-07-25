@@ -233,13 +233,14 @@ private class GaitAnalyzer(private val onStep: (Float) -> Unit) {
         /**
          * Steps that must line up before any are counted.
          *
-         * Four rejects fidgeting well but never registers a walk shorter than
-         * four steps — and moving around a home is largely three-step bursts
-         * between turns, so it silently discarded much of the real walking.
-         * Three is the compromise; the cost is paid back by the tolerance
-         * above being trend-aware rather than loosened outright.
+         * Two, because the legs between turns are short. Walking a 1.5 x 3 m
+         * L-shaped circuit gives bursts of two to four steps, and a rule
+         * needing three consecutive discarded roughly a third of them — in
+         * that test 55 steps were counted where about 75 were taken. Raising
+         * the bar to three or four rejects fidgeting better but throws away
+         * the walking a home is actually made of.
          */
-        const val STEPS_TO_CONFIRM_BOUT = 3
+        const val STEPS_TO_CONFIRM_BOUT = 2
 
         /**
          * Consecutive off-cadence strides tolerated before the walk is
