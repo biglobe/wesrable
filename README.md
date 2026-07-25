@@ -10,7 +10,7 @@ connects to a Bluetooth device, and requests no `INTERNET` permission at all.
 
 | Capability | Sensor / API | Notes |
 |---|---|---|
-| Heading, pitch, roll | `TYPE_ROTATION_VECTOR` (fused accel+gyro+magnetometer) | Sub-degree resolution, shown live on a compass widget |
+| Heading, pitch, roll | `TYPE_GAME_ROTATION_VECTOR` (accel+gyro, no magnetometer) slowly corrected toward `TYPE_ROTATION_VECTOR` | Gyro heading is immune to the indoor steel that swings a compass by tens of degrees; a slow pull keeps it north-referenced (see below) |
 | WiFi landmarks | `WifiManager.startScan()` / `getScanResults()` | Passive scan only — SSID/BSSID/RSSI, no association |
 | BLE landmarks | `BluetoothLeScanner` observer scan | No `connectGatt()` — decodes iBeacon and Eddystone payloads directly from the advertisement bytes |
 | Range to each landmark | Log-distance path-loss model | Converts RSSI → estimated meters; noisy but connection-free |
@@ -354,6 +354,35 @@ improves — because only translation is corrected. A single "these two points
 are the same place" constraint doesn't observe rotation, and heading drift is
 usually the larger error; undoing that needs several simultaneous constraints
 and a proper pose-graph optimisation, which this isn't.
+
+### Why heading does not come from the compass
+
+Heading error is the dominant dead-reckoning error — it rotates everything
+walked after it — and indoors the compass is where that error comes from.
+`TYPE_ROTATION_VECTOR` folds the magnetometer into its fusion, which is right
+outdoors and wrong in a building: steel, wiring and appliances bend the field
+by tens of degrees, so the reported heading swings from room to room while the
+walker goes straight. It shows up as walking a circuit and not arriving back
+where you started, with the return leg rotated away from the outbound one.
+
+There is an irony worth stating plainly: this is the *same* distortion that
+makes magnetic fingerprinting work. A building magnetically distinctive enough
+to recognise is a building whose compass cannot be trusted.
+
+So heading comes from `TYPE_GAME_ROTATION_VECTOR` — the identical fusion with
+the magnetometer left out. Its turn rates come from the gyroscope, which does
+not care what the walls are made of. On its own it would be no good either: it
+creeps with gyro bias and has no idea where north is, which the persistent map
+requires, since sessions can only share a frame because their axes are
+north-referenced.
+
+The two are therefore combined. Turns come from the gyro, and the result is
+pulled towards magnetic north with a time constant of about 20 seconds — fast
+enough that gyro bias cannot wander far, slow enough that walking past a
+fridge moves the heading a fraction of a degree instead of following the
+disturbance. The pull is suspended entirely while Android reports the
+magnetometer as needing calibration, and the orientation card says which of
+those is happening rather than leaving it invisible.
 
 ### Telling walking apart from fidgeting
 

@@ -25,7 +25,7 @@ import kotlin.math.roundToInt
 fun OrientationCard(orientation: Orientation, available: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            Text("Orientation (rotation-vector fusion)", style = MaterialTheme.typography.titleMedium)
+            Text("Orientation (gyro heading, north-corrected)", style = MaterialTheme.typography.titleMedium)
             if (!available) {
                 Text("Rotation sensor not available on this device.")
                 return@Column
@@ -38,6 +38,21 @@ fun OrientationCard(orientation: Orientation, available: Boolean) {
                     Text("Roll: ${orientation.rollDeg.roundToInt()}°")
                 }
             }
+            // Heading error is the dominant trail error, and the compass is
+            // where it comes from indoors, so say plainly how much the
+            // platform trusts it rather than hiding it in a number.
+            Text(
+                when (orientation.accuracy) {
+                    3 -> "Compass: good — heading is being kept aligned to north."
+                    2 -> "Compass: usable — heading is being nudged towards north slowly."
+                    1 -> "Compass: poor (steel or magnets nearby). Heading is running on " +
+                        "the gyroscope alone and may slowly rotate away from north."
+                    else -> "Compass: unreliable — needs calibrating (wave the phone in a " +
+                        "figure of eight). Heading is on the gyroscope alone until it recovers."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }
