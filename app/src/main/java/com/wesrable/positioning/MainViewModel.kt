@@ -17,9 +17,12 @@ import com.wesrable.positioning.sensors.BarometerSensor
 import com.wesrable.positioning.sensors.OrientationSensor
 import com.wesrable.positioning.sensors.StepDetector
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -38,6 +41,12 @@ data class UiState(
 )
 
 private const val STALE_BLE_MILLIS = 12_000L
+private const val RETRY_BACKOFF_MILLIS = 2_000L
+
+/** Re-subscribes (re-registering sensor listeners / restarting scans) after
+ * any upstream failure, so a transient radio/driver hiccup doesn't
+ * permanently kill that one stream. */
+private fun <T> Flow<T>.resilient(): Flow<T> = retry { delay(RETRY_BACKOFF_MILLIS); true }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -66,49 +75,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var latestOrientation = Orientation()
     private var latestWifi: List<WifiSignal> = emptyList()
 
-    private var sensingJob: Job? = null
+    private var sensingJobs: List<Job> = emptyList()
 
+    /**
+     * Each sensor stream is launched as its own independent top-level child of
+     * [viewModelScope] rather than nested inside one shared coroutine. Nesting
+     * them (`launch { launch{}; launch{}; ... }`) would make them siblings
+     * under one plain Job, and structured concurrency cancels *all* siblings
+     * the moment *any one* of them throws — a single hiccup in, say, the BLE
+     * stack would silently freeze WiFi scanning, step counting, and
+     * orientation too. Independent top-level launches isolate failures to the
+     * stream that caused them.
+     */
     fun startSensing() {
-        if (sensingJob?.isActive == true) return
+        if (sensingJobs.any { it.isActive }) return
         _uiState.update { it.copy(isSensing = true) }
 
-        sensingJob = viewModelScope.launch {
-            launch {
-                orientationSensor.readings().collect { orientation ->
+        sensingJobs = listOf(
+            viewModelScope.launch {
+                orientationSensor.readings().resilient().collect { orientation ->
                     latestOrientation = orientation
                     recompute()
                 }
-            }
-            launch {
-                wifiScanner.scans().collect { signals ->
+            },
+            viewModelScope.launch {
+                wifiScanner.scans().resilient().collect { signals ->
                     latestWifi = signals
                     recompute()
                 }
-            }
-            launch {
-                bleScanner.scans().collect { signal ->
+            },
+            viewModelScope.launch {
+                bleScanner.scans().resilient().collect { signal ->
                     bleSignals[signal.address] = signal
                     pruneStaleBle()
                     recompute()
                 }
-            }
-            launch {
-                barometerSensor.readings().collect { reading ->
+            },
+            viewModelScope.launch {
+                barometerSensor.readings().resilient().collect { reading ->
                     _uiState.update { it.copy(barometer = reading) }
                 }
-            }
-            launch {
-                stepDetector.steps().collect { stepLength ->
+            },
+            viewModelScope.launch {
+                stepDetector.steps().resilient().collect { stepLength ->
                     engine.onStep(stepLength, latestOrientation.azimuthDeg)
                     recompute()
                 }
-            }
-        }
+            },
+        )
     }
 
     fun stopSensing() {
-        sensingJob?.cancel()
-        sensingJob = null
+        sensingJobs.forEach { it.cancel() }
+        sensingJobs = emptyList()
         _uiState.update { it.copy(isSensing = false) }
     }
 

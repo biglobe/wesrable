@@ -18,6 +18,15 @@ fun WifiListCard(signals: List<WifiSignal>, available: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text("WiFi access points seen (passive scan, not connected)", style = MaterialTheme.typography.titleMedium)
+            val lastScanAgeSeconds = signals.maxOfOrNull { it.lastSeenMillis }
+                ?.let { (System.currentTimeMillis() - it) / 1000 }
+            if (lastScanAgeSeconds != null) {
+                Text(
+                    "Last scan: ${lastScanAgeSeconds}s ago " +
+                        "(Android limits scans to ~4 per 2 min, so this updates in bursts)",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             when {
                 !available -> Text("WiFi radio not available or disabled.")
                 signals.isEmpty() -> Text("Scanning…")

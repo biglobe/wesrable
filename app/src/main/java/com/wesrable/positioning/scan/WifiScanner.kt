@@ -31,7 +31,16 @@ class WifiScanner(private val context: Context) {
 
     val isAvailable: Boolean get() = wifiManager.isWifiEnabled || wifiManager.scanResults != null
 
-    fun scans(periodMillis: Long = 15_000L): Flow<List<WifiSignal>> = callbackFlow {
+    /**
+     * @param periodMillis How often to request a new scan. Android caps
+     *   foreground apps at ~4 scans per 2 minutes (i.e. one roughly every
+     *   30s) regardless of how often this is called — requesting faster than
+     *   that just wastes calls that the OS silently drops, so the default
+     *   matches the platform ceiling. Fresh results still arrive via the
+     *   [WifiManager.SCAN_RESULTS_AVAILABLE_ACTION] receiver whenever *any*
+     *   scan completes (ours or another app's), not only on this cadence.
+     */
+    fun scans(periodMillis: Long = 30_000L): Flow<List<WifiSignal>> = callbackFlow {
         fun emitCurrentResults() {
             @Suppress("MissingPermission")
             val results = try {
