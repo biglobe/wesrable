@@ -19,6 +19,9 @@ class DeadReckoningTracker {
     private var y = 0.0
     private var stepCount = 0
 
+    /** Total footsteps counted since the tracker was created or last [reset]. */
+    val totalSteps: Int get() = stepCount
+
     fun reset() {
         x = 0.0
         y = 0.0

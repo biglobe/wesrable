@@ -55,7 +55,7 @@ fun MainScreen(
                 )
             }
             item {
-                PositionCard(position = state.position)
+                PositionCard(position = state.position, stepCount = state.stepCount)
             }
             item {
                 BarometerCard(

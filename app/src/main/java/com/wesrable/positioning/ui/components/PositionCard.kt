@@ -19,7 +19,7 @@ import com.wesrable.positioning.model.PositionSource
 private const val PIXELS_PER_METER = 24f
 
 @Composable
-fun PositionCard(position: PositionEstimate) {
+fun PositionCard(position: PositionEstimate, stepCount: Int) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text("Position estimate (relative to start point)", style = MaterialTheme.typography.titleMedium)
@@ -28,6 +28,7 @@ fun PositionCard(position: PositionEstimate) {
                     "x=${"%.1f".format(position.xMeters)} m, y=${"%.1f".format(position.yMeters)} m · " +
                     "±${"%.1f".format(position.confidenceRadiusMeters)} m",
             )
+            Text("Steps: $stepCount")
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()

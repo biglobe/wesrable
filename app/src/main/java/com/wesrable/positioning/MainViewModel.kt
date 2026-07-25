@@ -29,6 +29,7 @@ data class UiState(
     val bleSignals: List<BleSignal> = emptyList(),
     val barometer: BarometricReading? = null,
     val position: PositionEstimate = PositionEstimate(0.0, 0.0, PositionSource.UNAVAILABLE, 0.0),
+    val stepCount: Int = 0,
     val wifiAvailable: Boolean = false,
     val bleAvailable: Boolean = false,
     val orientationAvailable: Boolean = false,
@@ -125,6 +126,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 wifiSignals = latestWifi.sortedByDescending { s -> s.rssiDbm },
                 bleSignals = ble.sortedByDescending { s -> s.rssiDbm },
                 position = position,
+                stepCount = engine.stepCount,
             )
         }
     }

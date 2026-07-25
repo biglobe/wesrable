@@ -19,6 +19,9 @@ import com.wesrable.positioning.model.WifiSignal
  */
 class PositioningEngine(private val deadReckoning: DeadReckoningTracker = DeadReckoningTracker()) {
 
+    /** Total footsteps counted since the engine was created. */
+    val stepCount: Int get() = deadReckoning.totalSteps
+
     fun onStep(stepLengthMeters: Float, headingDegrees: Float) {
         deadReckoning.onStep(stepLengthMeters, headingDegrees)
     }
