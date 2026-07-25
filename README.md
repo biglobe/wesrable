@@ -32,6 +32,23 @@ ships with an empty anchor map (`MainViewModel.anchors`); wire in your own
 site survey there to enable trilateration. Without it, the app still runs
 fully useful dead reckoning + a live landmark list.
 
+**Caveat: BSSID is not a permanent identifier.** `PositioningEngine` keys
+calibrated anchors by BSSID, but a WiFi BSSID can change under a physical AP
+that never moved: multi-band routers broadcast a different BSSID per radio
+(2.4/5/6 GHz) under one SSID, mesh systems (eero, Orbi, Nest Wifi, etc.)
+expose one BSSID per node and can steer clients between nodes, guest/virtual
+SSIDs typically derive a second BSSID by incrementing the base MAC, and
+firmware updates, factory resets, or hardware swaps can change it outright.
+A calibrated anchor can silently go stale after any of these. Android's
+`ScanResult` API doesn't expose a stronger per-device identifier to
+third-party apps — security type, channel width, and vendor OUI (the BSSID's
+first 3 octets) only help *group* related BSSIDs, they aren't unique IDs on
+their own. If an anchor needs to survive router firmware/hardware churn,
+prefer a BLE beacon's UUID/major/minor (parsed in `BleAdvertisementParser.kt`)
+as the calibration target instead of a WiFi BSSID — that identifier lives in
+the advertisement payload, not the radio's MAC, so it doesn't move when the
+beacon reboots or a mesh node gets swapped.
+
 ## Project layout
 
 ```
