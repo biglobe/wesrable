@@ -106,8 +106,11 @@ fun PositionCard(
             Text(
                 when {
                     closureCount == 0 ->
-                        "No loops closed yet — walk a circuit of 60 m or more and come " +
-                            "back past where you've already been."
+                        "No loops closed yet. Drift correction needs ~60 m of walking " +
+                            "between two passes of the same spot — repeating a small " +
+                            "circuit counts — and only acts once drift grows beyond what " +
+                            "signal matching can resolve, so it engages over a " +
+                            "house-sized floor rather than a single room."
                     else ->
                         "Loops closed: $closureCount" +
                             (lastClosureDriftMeters?.let {

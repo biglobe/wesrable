@@ -221,8 +221,27 @@ Two consequences follow, and both are enforced in code:
   match resolution therefore trades a small real error for a comparable
   invented one. Corrections under 5 m are discarded.
 - Drift only exceeds that resolution once you've walked a fair way (it runs
-  about 5% of distance travelled), so closures need a loop of at least 60 m.
-  Below that the trail is left alone.
+  about 5% of distance travelled), so closures need at least 60 m of walking
+  between the two passes. Below that the trail is left alone. Note this is
+  distance *walked*, not the size of the space — repeating a small circuit
+  reaches it, and a 6×5 m flat does so in three laps.
+
+**This means loop closure does nothing in a single room, by design.** The two
+gates are independent, and the drift one is the binding constraint in a small
+home: a 4×3 m studio walked for 144 m accumulates only ~2.1 m of drift, well
+under the 5 m floor, so no correction is attempted. That is the right answer —
+correcting a 2 m error with a measurement good to ±5 m makes it worse, which
+simulation confirms. Only over a house-sized floor does drift outgrow the
+match resolution: a 10×8 m floor walked for 278 m drifts 10.3 m and closure
+brings it to 6.9 m.
+
+The honest limitation is that 2 m of error is small absolutely but large
+*relative* to a 4 m room, so a small home's trail is meaningfully wrong and
+this technique cannot fix it. Two things could, neither implemented: a manual
+"I am back at this room" tap, which constrains against an exactly-recorded
+marker and so carries none of the match uncertainty that forces the 5 m floor;
+or matching *sequences* of magnetic-field readings, which vary on ~1 m scales
+indoors against RSSI's ~5–10 m.
 
 With those in place, simulated routes shorter than 60 m are untouched, and a
 240 m circuit walked with heavy heading drift ends up **17.9 m → 9.6 m** from
