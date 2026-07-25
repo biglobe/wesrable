@@ -41,6 +41,9 @@ fun PositionCard(
     stepCount: Int,
     headingDeg: Float,
     trail: List<Pair<Double, Double>>,
+    closurePoints: List<Pair<Double, Double>>,
+    closureCount: Int,
+    lastClosureDriftMeters: Double?,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -51,6 +54,19 @@ fun PositionCard(
                     "±${"%.1f".format(position.confidenceRadiusMeters)} m",
             )
             Text("Steps: $stepCount")
+            Text(
+                when {
+                    closureCount == 0 ->
+                        "No loops closed yet — walk a circuit of 60 m or more and come " +
+                            "back past where you've already been."
+                    else ->
+                        "Loops closed: $closureCount" +
+                            (lastClosureDriftMeters?.let {
+                                " · last one pulled the trail %.1f m back into line".format(it)
+                            } ?: "")
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
             Text(
                 "Heading-up map, centered on you — the top always means the direction " +
                     "you're currently facing, and the blue dot stays centered as you walk, " +
@@ -127,6 +143,17 @@ fun PositionCard(
 
                     // Start point.
                     drawCircle(Color(0xFF9E9E9E), radius = 5f, center = project(0.0, 0.0))
+
+                    // Where the app recognised it had been before and pulled
+                    // the trail back into line.
+                    closurePoints.forEach { (east, north) ->
+                        drawCircle(
+                            Color(0xFF43A047),
+                            radius = 6f,
+                            center = project(east, north),
+                            style = Stroke(width = 2f),
+                        )
+                    }
 
                     val currentPoint = project(position.xMeters, position.yMeters)
                     val confidencePx = (position.confidenceRadiusMeters * PIXELS_PER_METER).toFloat()

@@ -73,3 +73,43 @@ data class RoomEstimate(
     val label: String?,
     val confidence: Double,
 )
+
+/**
+ * A fingerprint captured automatically along the walked trail, tagged with
+ * the dead-reckoned position it was taken at. Unlike [Fingerprint] these need
+ * no label and are never shown to the user — they exist so the app can
+ * recognise that it has returned to a place it has already been, and correct
+ * the accumulated drift between the two visits (see `LoopClosure`).
+ *
+ * [wifiScanGeneration] identifies which WiFi scan the RSSIs came from.
+ * Android throttles scans to roughly one per 30 s, so two waypoints recorded
+ * a few metres apart routinely carry *byte-identical* WiFi readings. Comparing
+ * those would report a perfect match between genuinely different places, so
+ * the WiFi term is skipped whenever two waypoints share a generation.
+ */
+data class TrailWaypoint(
+    val xMeters: Double,
+    val yMeters: Double,
+    val pathLengthMeters: Double,
+    val wifiRssi: Map<String, Int>,
+    val bleRssi: Map<String, Int>,
+    val magneticMagnitudeUt: Float?,
+    val wifiScanGeneration: Long,
+)
+
+/**
+ * A detected revisit: the walker is judged to be back at the place recorded
+ * by the waypoint at [matchedIndex]. [driftEastMeters]/[driftNorthMeters] is
+ * how far the dead-reckoned position has slipped between the two visits —
+ * the error the trail correction removes.
+ */
+data class LoopClosure(
+    val matchedIndex: Int,
+    val anchorPathLengthMeters: Double,
+    val currentPathLengthMeters: Double,
+    val driftEastMeters: Double,
+    val driftNorthMeters: Double,
+) {
+    val driftMeters: Double
+        get() = kotlin.math.hypot(driftEastMeters, driftNorthMeters)
+}

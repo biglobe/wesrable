@@ -17,7 +17,10 @@ import com.wesrable.positioning.model.WifiSignal
  * unbounded over distance. This mirrors how commercial indoor-positioning
  * SDKs combine PDR with periodic RF/UWB corrections.
  */
-class PositioningEngine(private val deadReckoning: DeadReckoningTracker = DeadReckoningTracker()) {
+class PositioningEngine(
+    private val deadReckoning: DeadReckoningTracker = DeadReckoningTracker(),
+    private val loopClosure: LoopClosureTracker = LoopClosureTracker(),
+) {
 
     /** Total footsteps counted since the engine was created. */
     val stepCount: Int get() = deadReckoning.totalSteps
@@ -25,8 +28,55 @@ class PositioningEngine(private val deadReckoning: DeadReckoningTracker = DeadRe
     /** Every (east, north) position visited so far — the walked path. */
     val trail: List<Pair<Double, Double>> get() = deadReckoning.trail
 
+    /** Loops closed so far, and by how much the last one shifted the trail. */
+    var closureCount: Int = 0
+        private set
+    var lastClosureDriftMeters: Double? = null
+        private set
+
+    /** Where each loop was closed, for marking on the map. */
+    val closurePoints: List<Pair<Double, Double>> get() = loopClosure.closurePoints
+
     fun onStep(stepLengthMeters: Float, headingDegrees: Float) {
         deadReckoning.onStep(stepLengthMeters, headingDegrees)
+    }
+
+    /**
+     * Offers the current signal snapshot for automatic waypoint recording. If
+     * the walker is recognised as having returned somewhere they've been, the
+     * drift accumulated in between is removed from the trail in place.
+     */
+    fun observeSignals(
+        wifiRssi: Map<String, Int>,
+        bleRssi: Map<String, Int>,
+        magneticMagnitudeUt: Float?,
+        wifiScanGeneration: Long,
+    ) {
+        val position = deadReckoning.currentPosition()
+        val closure = loopClosure.observe(
+            xMeters = position.xMeters,
+            yMeters = position.yMeters,
+            pathLengthMeters = deadReckoning.pathLengthMeters,
+            wifiRssi = wifiRssi,
+            bleRssi = bleRssi,
+            magneticMagnitudeUt = magneticMagnitudeUt,
+            wifiScanGeneration = wifiScanGeneration,
+        ) ?: return
+
+        deadReckoning.rubberSheet(
+            anchorPathLength = closure.anchorPathLengthMeters,
+            endPathLength = closure.currentPathLengthMeters,
+            driftEast = closure.driftEastMeters,
+            driftNorth = closure.driftNorthMeters,
+        )
+        loopClosure.applyCorrection(
+            anchorPathLength = closure.anchorPathLengthMeters,
+            endPathLength = closure.currentPathLengthMeters,
+            driftEast = closure.driftEastMeters,
+            driftNorth = closure.driftNorthMeters,
+        )
+        closureCount++
+        lastClosureDriftMeters = closure.driftMeters
     }
 
     /**

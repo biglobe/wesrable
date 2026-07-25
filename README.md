@@ -76,8 +76,64 @@ between adjacent rooms), not the centimeter-level position a robot vacuum's
 LIDAR/wheel-encoder SLAM achieves. The fundamental gap versus real SLAM is
 **loop closure**: a vacuum recognizes when it's revisited an exact spot and
 snaps its estimate back onto a persistent map; this app has no equivalent —
-every match is independent, there's no map-building or drift correction
-beyond what's already recorded.
+every match is independent, and room matching itself builds no map.
+
+(Drift correction *is* now attempted, separately from room matching, by
+automatically fingerprinting the trail itself — see Loop closure below. It
+narrows the gap versus real SLAM rather than closing it: the RF constraint is
+worth a few meters, where a LIDAR's is worth centimeters.)
+
+### Loop closure: correcting drift on revisit
+
+Dead reckoning drifts, so walking a circuit of a building and returning to
+where you started leaves the trail's end somewhere other than its beginning.
+Loop closure is what fixes that, and it's what makes a robot vacuum's map
+come out square: recognise that you're somewhere you've already been, and
+whatever gap has opened up between the two visits is pure accumulated error.
+
+Every 2.5 m the app records a `TrailWaypoint` — the RSSI of everything
+audible plus the ambient magnetic field, tagged with the dead-reckoned
+position at the time. These are automatic and unlabeled, quite separate from
+the rooms you name by hand. Each new waypoint is compared against earlier
+ones, and a close signal match means the two are the same place. The error is
+then removed by "rubber sheeting" the trail: points before the revisited
+waypoint stay put, points after it shift by the whole error, and points in
+between shift in proportion to how far along the loop they were walked, so
+the path's shape survives locally instead of acquiring a kink where the error
+happened to be noticed.
+
+**How well it works, and when it doesn't.** Because `LoopClosureTracker` has
+no Android dependencies it can be run on the JVM against simulated walks —
+synthetic RF and magnetic signals generated from a known ground truth, with
+heading drift accumulating as a real compass's would. That measurement is
+what set the thresholds, and it says something worth being upfront about:
+
+*RF fingerprint matching cannot resolve position finer than several meters.*
+Signal distance grows only logarithmically with separation, while RSSI at a
+fixed spot wanders by several dB. Simulated at a realistic ±5 dB, standing
+still gives a median signal distance of ~3.0 and walking 12 m away gives only
+~6.2 — heavily overlapping distributions. A match threshold of 8, which looks
+sensible next to the 15 dB missing-landmark penalty, in fact accepts
+waypoints 20 m apart as "the same place".
+
+Two consequences follow, and both are enforced in code:
+
+- The gap a closure measures is not pure drift; it is drift *plus* however
+  far apart the two waypoints really are. Correcting a drift smaller than the
+  match resolution therefore trades a small real error for a comparable
+  invented one. Corrections under 5 m are discarded.
+- Drift only exceeds that resolution once you've walked a fair way (it runs
+  about 5% of distance travelled), so closures need a loop of at least 60 m.
+  Below that the trail is left alone.
+
+With those in place, simulated routes shorter than 60 m are untouched, and a
+240 m circuit walked with heavy heading drift ends up **17.9 m → 9.6 m** from
+ground truth. When drift is mild the correction is roughly a wash, and
+`worst`-case error along the trail does increase even as the endpoint
+improves — because only translation is corrected. A single "these two points
+are the same place" constraint doesn't observe rotation, and heading drift is
+usually the larger error; undoing that needs several simultaneous constraints
+and a proper pose-graph optimisation, which this isn't.
 
 ### Telling walking apart from fidgeting
 
@@ -128,7 +184,8 @@ app/src/main/java/com/wesrable/positioning/
                      Fingerprint, RoomEstimate...
   sensors/          OrientationSensor, BarometerSensor, MagnetometerSensor, StepDetector
   scan/             WifiScanner, BleScanner, BleAdvertisementParser
-  positioning/       RssiDistance, Trilateration, DeadReckoningTracker, PositioningEngine
+  positioning/       RssiDistance, Trilateration, DeadReckoningTracker,
+                     LoopClosureTracker, PositioningEngine
   fingerprint/      FingerprintStore, FingerprintMatcher
   ui/               Jetpack Compose screens
   MainActivity.kt, MainViewModel.kt

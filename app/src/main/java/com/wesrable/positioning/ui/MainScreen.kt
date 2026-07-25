@@ -61,6 +61,9 @@ fun MainScreen(
                     stepCount = state.stepCount,
                     headingDeg = state.orientation.azimuthDeg,
                     trail = state.trail,
+                    closurePoints = state.closurePoints,
+                    closureCount = state.closureCount,
+                    lastClosureDriftMeters = state.lastClosureDriftMeters,
                 )
             }
             item {

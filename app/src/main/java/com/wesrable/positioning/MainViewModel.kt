@@ -39,6 +39,9 @@ data class UiState(
     val position: PositionEstimate = PositionEstimate(0.0, 0.0, PositionSource.UNAVAILABLE, 0.0),
     val stepCount: Int = 0,
     val trail: List<Pair<Double, Double>> = emptyList(),
+    val closurePoints: List<Pair<Double, Double>> = emptyList(),
+    val closureCount: Int = 0,
+    val lastClosureDriftMeters: Double? = null,
     val magneticMagnitudeUt: Float? = null,
     val roomEstimate: RoomEstimate = RoomEstimate(null, 0.0),
     val savedRooms: List<Pair<String, Int>> = emptyList(),
@@ -90,6 +93,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var latestWifi: List<WifiSignal> = emptyList()
     private var latestMagneticMagnitudeUt: Float? = null
 
+    /**
+     * Bumped on every completed WiFi scan. Android throttles scans to roughly
+     * one per 30 s, so consecutive waypoints routinely carry identical WiFi
+     * readings; loop closure uses this to tell "same place" apart from
+     * "same stale scan".
+     */
+    private var wifiScanGeneration = 0L
+
     private var sensingJobs: List<Job> = emptyList()
 
     /**
@@ -116,6 +127,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 wifiScanner.scans().resilient().collect { signals ->
                     latestWifi = signals
+                    wifiScanGeneration++
                     recompute()
                 }
             },
@@ -134,6 +146,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 stepDetector.steps().resilient().collect { stepLength ->
                     engine.onStep(stepLength, latestOrientation.azimuthDeg)
+                    // Offered per step rather than per scan: the engine keys
+                    // waypoints off distance walked, which only changes here.
+                    engine.observeSignals(
+                        wifiRssi = latestWifi.associate { it.bssid to it.rssiDbm },
+                        bleRssi = bleSignals.values.associate { it.identifier to it.rssiDbm },
+                        magneticMagnitudeUt = latestMagneticMagnitudeUt,
+                        wifiScanGeneration = wifiScanGeneration,
+                    )
                     recompute()
                 }
             },
@@ -203,6 +223,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 position = position,
                 stepCount = engine.stepCount,
                 trail = engine.trail,
+                closurePoints = engine.closurePoints,
+                closureCount = engine.closureCount,
+                lastClosureDriftMeters = engine.lastClosureDriftMeters,
                 magneticMagnitudeUt = latestMagneticMagnitudeUt,
                 roomEstimate = roomEstimate,
             )
