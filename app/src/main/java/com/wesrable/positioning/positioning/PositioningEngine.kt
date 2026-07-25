@@ -22,6 +22,9 @@ class PositioningEngine(private val deadReckoning: DeadReckoningTracker = DeadRe
     /** Total footsteps counted since the engine was created. */
     val stepCount: Int get() = deadReckoning.totalSteps
 
+    /** Every (east, north) position visited so far — the walked path. */
+    val trail: List<Pair<Double, Double>> get() = deadReckoning.trail
+
     fun onStep(stepLengthMeters: Float, headingDegrees: Float) {
         deadReckoning.onStep(stepLengthMeters, headingDegrees)
     }

@@ -15,7 +15,7 @@ connects to a Bluetooth device, and requests no `INTERNET` permission at all.
 | BLE landmarks | `BluetoothLeScanner` observer scan | No `connectGatt()` — decodes iBeacon and Eddystone payloads directly from the advertisement bytes |
 | Range to each landmark | Log-distance path-loss model | Converts RSSI → estimated meters; noisy but connection-free |
 | 2D position (with calibrated anchors) | Least-squares multilateration | Needs ≥3 landmarks with known coordinates (see Calibration below) |
-| 2D position (always-on fallback) | Pedestrian dead reckoning | Step detection (accelerometer or `TYPE_STEP_DETECTOR`) × heading, integrated from a start point. Zero radios required. |
+| 2D position (always-on fallback) | Pedestrian dead reckoning | Step detection (accelerometer or `TYPE_STEP_DETECTOR`) × heading, integrated from a start point, with the full walked path retained and drawn as a trail. Zero radios required. |
 | Floor / relative altitude | `TYPE_PRESSURE` barometer | ~3 m per floor heuristic, relative to session start |
 | Room identification | WiFi/BLE RSSI + magnetic-field fingerprint matching | Weighted k-NN against a map you record once by walking each room; no coordinates needed (see below) |
 
@@ -128,8 +128,9 @@ methods below.
 
 **The position map is heading-up, not north-up.** `DeadReckoningTracker`
 accumulates true (east, north) displacement from the compass heading at each
-step — that part is a straightforward, correct compass-to-Cartesian
-conversion. But `PositionCard` renders it *heading-up*: the top of the map
+step, and now also keeps every point visited (`trail`) — that part is a
+straightforward, correct compass-to-Cartesian conversion. But `PositionCard`
+renders it *heading-up*: the top of the map
 always means "the direction you're currently facing," not north (the same
 convention a phone nav app's walking mode uses), by projecting the
 accumulated displacement onto (forward, right) relative to the live compass

@@ -18,14 +18,20 @@ class DeadReckoningTracker {
     private var x = 0.0
     private var y = 0.0
     private var stepCount = 0
+    private val trailPoints = mutableListOf(0.0 to 0.0)
 
     /** Total footsteps counted since the tracker was created or last [reset]. */
     val totalSteps: Int get() = stepCount
+
+    /** Every (east, north) position visited so far, oldest first, including the start point. */
+    val trail: List<Pair<Double, Double>> get() = trailPoints.toList()
 
     fun reset() {
         x = 0.0
         y = 0.0
         stepCount = 0
+        trailPoints.clear()
+        trailPoints.add(0.0 to 0.0)
     }
 
     /**
@@ -40,6 +46,7 @@ class DeadReckoningTracker {
         x += stepLengthMeters * sin(headingRad)
         y += stepLengthMeters * cos(headingRad)
         stepCount++
+        trailPoints.add(x to y)
 
         // Confidence widens with distance travelled to reflect drift.
         val distanceTravelled = stepCount * stepLengthMeters

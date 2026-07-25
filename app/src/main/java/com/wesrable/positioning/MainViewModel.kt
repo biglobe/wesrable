@@ -38,6 +38,7 @@ data class UiState(
     val barometer: BarometricReading? = null,
     val position: PositionEstimate = PositionEstimate(0.0, 0.0, PositionSource.UNAVAILABLE, 0.0),
     val stepCount: Int = 0,
+    val trail: List<Pair<Double, Double>> = emptyList(),
     val magneticMagnitudeUt: Float? = null,
     val roomEstimate: RoomEstimate = RoomEstimate(null, 0.0),
     val savedRooms: List<Pair<String, Int>> = emptyList(),
@@ -201,6 +202,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 bleSignals = ble.sortedByDescending { s -> s.rssiDbm },
                 position = position,
                 stepCount = engine.stepCount,
+                trail = engine.trail,
                 magneticMagnitudeUt = latestMagneticMagnitudeUt,
                 roomEstimate = roomEstimate,
             )

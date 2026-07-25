@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
@@ -32,6 +33,7 @@ fun PositionCard(
     position: PositionEstimate,
     stepCount: Int,
     headingDeg: Float,
+    trail: List<Pair<Double, Double>>,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -45,7 +47,8 @@ fun PositionCard(
             Text(
                 "Heading-up map — the top of the map always means the direction you're " +
                     "currently facing, so forward motion always renders as moving up from " +
-                    "the origin. The ring shows where north currently is relative to that.",
+                    "the origin. The trail behind the dot is everywhere you've walked; the " +
+                    "ring shows where north currently is relative to that.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Box(Modifier.padding(top = 8.dp)) {
@@ -75,23 +78,41 @@ fun PositionCard(
                     // Origin (start point).
                     drawCircle(Color(0xFF9E9E9E), radius = 5f, center = Offset(centerX, centerY))
 
-                    // Rotate the (east, north) displacement into (right, forward)
-                    // relative to the *current* heading, so "up" on screen always
-                    // means "the way you're facing right now" — a heading-up map,
+                    // Rotate every (east, north) point — the trail and the
+                    // current position alike — into (right, forward) relative
+                    // to the *current* heading, so "up" on screen always means
+                    // "the way you're facing right now" — a heading-up map,
                     // like a phone nav app's walking mode, rather than a fixed
                     // north-up one where "forward" only points up if you happen
-                    // to be walking due north.
+                    // to be walking due north. The whole trail is re-projected
+                    // every frame, so it visibly swings around as you turn,
+                    // exactly like the live position dot does.
                     val headingRad = Math.toRadians(headingDeg.toDouble())
-                    val east = position.xMeters
-                    val north = position.yMeters
-                    val forward = east * sin(headingRad) + north * cos(headingRad)
-                    val right = east * cos(headingRad) - north * sin(headingRad)
+                    val sinH = sin(headingRad)
+                    val cosH = cos(headingRad)
 
-                    val px = centerX + (right * PIXELS_PER_METER).toFloat()
-                    val py = centerY - (forward * PIXELS_PER_METER).toFloat()
+                    fun project(east: Double, north: Double): Offset {
+                        val forward = east * sinH + north * cosH
+                        val right = east * cosH - north * sinH
+                        return Offset(
+                            centerX + (right * PIXELS_PER_METER).toFloat(),
+                            centerY - (forward * PIXELS_PER_METER).toFloat(),
+                        )
+                    }
+
+                    if (trail.size > 1) {
+                        val path = Path()
+                        trail.forEachIndexed { index, (east, north) ->
+                            val point = project(east, north)
+                            if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                        }
+                        drawPath(path, color = Color(0xFF90A4CC), style = Stroke(width = 4f))
+                    }
+
+                    val currentPoint = project(position.xMeters, position.yMeters)
                     val confidencePx = (position.confidenceRadiusMeters * PIXELS_PER_METER).toFloat()
-                    drawCircle(Color(0x333D7FD9), radius = confidencePx.coerceAtLeast(4f), center = Offset(px, py))
-                    drawCircle(Color(0xFF3D7FD9), radius = 10f, center = Offset(px, py))
+                    drawCircle(Color(0x333D7FD9), radius = confidencePx.coerceAtLeast(4f), center = currentPoint)
+                    drawCircle(Color(0xFF3D7FD9), radius = 10f, center = currentPoint)
                 }
                 NorthCompassRing(
                     headingDeg = headingDeg,

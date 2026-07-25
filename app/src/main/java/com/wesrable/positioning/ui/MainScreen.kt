@@ -60,6 +60,7 @@ fun MainScreen(
                     position = state.position,
                     stepCount = state.stepCount,
                     headingDeg = state.orientation.azimuthDeg,
+                    trail = state.trail,
                 )
             }
             item {
