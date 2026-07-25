@@ -59,6 +59,7 @@ fun MainScreen(
                 PositionCard(
                     position = state.position,
                     stepCount = state.stepCount,
+                    pathLengthMeters = state.pathLengthMeters,
                     headingDeg = state.orientation.azimuthDeg,
                     trail = state.trail,
                     closurePoints = state.closurePoints,

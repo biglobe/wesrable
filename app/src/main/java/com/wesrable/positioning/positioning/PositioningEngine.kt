@@ -98,6 +98,16 @@ class PositioningEngine(
     /** Total footsteps counted since the engine was created. */
     val stepCount: Int get() = deadReckoning.totalSteps
 
+    /**
+     * Distance the trail believes was walked. Shown in the UI beside the step
+     * count because the two together are what diagnose a wrong-sized trail:
+     * against a known walk, a distance that is too long with a plausible step
+     * count means the stride estimate is wrong, and a distance that is too
+     * long with an inflated step count means steps are being invented. From a
+     * drawing alone the two are indistinguishable.
+     */
+    val pathLengthMeters: Double get() = deadReckoning.pathLengthMeters
+
     /** Every (east, north) position visited so far — the walked path. */
     val trail: List<Pair<Double, Double>> get() = deadReckoning.trail
 

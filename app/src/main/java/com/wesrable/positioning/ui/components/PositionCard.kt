@@ -90,6 +90,7 @@ private fun rotateOffset(offset: Offset, degrees: Float): Offset {
 fun PositionCard(
     position: PositionEstimate,
     stepCount: Int,
+    pathLengthMeters: Double,
     headingDeg: Float,
     trail: List<Pair<Double, Double>>,
     closurePoints: List<Pair<Double, Double>>,
@@ -113,7 +114,15 @@ fun PositionCard(
                     "x=${"%.1f".format(position.xMeters)} m, y=${"%.1f".format(position.yMeters)} m · " +
                     "±${"%.1f".format(position.confidenceRadiusMeters)} m",
             )
-            Text("Steps: $stepCount")
+            // Steps, distance and the stride implied by them. Against a walk
+            // of known length these three separate a wrong stride estimate
+            // from invented steps, which a drawing of the trail cannot.
+            Text(
+                "Steps: $stepCount · walked %.1f m".format(pathLengthMeters) +
+                    if (stepCount > 0) {
+                        " · mean stride %.0f cm".format(100 * pathLengthMeters / stepCount)
+                    } else "",
+            )
             Text(
                 when {
                     closureCount == 0 ->
