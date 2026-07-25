@@ -400,21 +400,46 @@ vector — is direction-blind, and rectifies a shake along *any* axis into an
 apparent step.
 
 **Gait is rhythmic and sustained.** A peak becomes a *candidate*, not a step.
-Candidates are only committed once four arrive in a row at a steady,
-plausible walking cadence (400 ms–1 s apart, within 20% of each other), and
-the cadence keeps being enforced for the rest of the walk, so one lucky
-confirmation can't open the floodgates. Confirmation is **retroactive** — the
-whole run is emitted at once — so the check costs no steps, only a brief
-delay at the start of a walk. The trade is that a walk shorter than four
-steps never registers.
+Candidates are committed once three arrive in a row at a plausible walking
+cadence, retroactively so the check costs no steps — only a short delay at the
+start of a walk.
 
-Two details matter more than they look. The stride floor is 400 ms rather
-than 300 ms because at 300 ms a 3 Hz shake sits *inside* the plausible band
-and reads as perfectly steady fast walking. And a peak rejected for arriving
-too soon still updates the "last candidate" timestamp — without that, a fast
-rhythmic shake has every other peak rejected and the survivors land a
-plausible stride apart, frequency-dividing a 4 Hz fidget into convincing 2 Hz
-"gait". Both were found by simulating synthetic traces against the analyzer.
+What "plausible cadence" means was got wrong first time round, and the way it
+was wrong is instructive. Each interval was required to sit within 20% of the
+others across the window, which is a fair description of a treadmill and a
+poor one of a home. Real indoor walking is short bursts between turns, and
+each burst *accelerates* out of standing and *decelerates* into stopping, so
+consecutive intervals trend rather than scatter — and a window test forbids a
+trend. Simulated against bursts of that shape, the detector counted 94% of
+long striding steps but only 51% of pottering and **27% of slow careful
+walking**, which matches the reported symptom exactly: several steps before it
+starts, then dropping out.
+
+Each interval is now compared with *the one before it* at the same 20%. The
+figure did not change; the question did. A cadence that steadily quickens or
+slows still reads as one walk, while scatter still does not. Two related gates
+were wrong for the same reason: the slowest accepted stride was 1 s, which
+rejects the first step or two out of a standstill, now 1.8 s; and a single
+off-cadence stride ended the walk, costing the next three steps to
+re-confirm, where a turn or a doorway looks exactly like that — two in a row
+are now needed.
+
+| Scenario | Before | After |
+|---|---|---|
+| long strides, 8–15 step bursts | 94% | 100% |
+| normal indoor, 4–9 step bursts | 97% | 100% |
+| pottering, 2–5 step bursts | 51% | 86% |
+| gentle + short, 3–6 step bursts | 68% | 99% |
+| slow careful, 850 ms cadence | 27% | 100% |
+
+The cost is real and was measured alongside: fidget peaks slipping through
+roughly tripled. That is the right trade while missed steps are the live
+problem — a missed step shortens the trail every time you walk, where a
+spurious one only costs something while you are fidgeting — and the fidget
+figures overstate it, since the simulation feeds a purely vertical signal
+whereas real idle movement is mostly lateral and is removed by the gravity
+projection before the analyzer sees it. Pottering stays at 86% because a
+two-step burst cannot be confirmed by a rule that needs three.
 
 Because `GaitAnalyzer` is deliberately free of Android dependencies, it can
 be exercised on the JVM with synthetic acceleration traces — sinusoidal gait

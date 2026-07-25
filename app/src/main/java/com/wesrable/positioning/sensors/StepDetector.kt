@@ -195,10 +195,27 @@ private class GaitAnalyzer(private val onStep: (Float) -> Unit) {
          */
         const val MIN_STEP_INTERVAL_MILLIS = 400L
 
-        /** 1 step/s; slower than this is not a continuous gait. */
-        const val MAX_STEP_INTERVAL_MILLIS = 1_000L
+        /**
+         * Slowest stride still treated as walking. Generous, because a step
+         * out of a standing start is much slower than the cruise that
+         * follows: at 1 s this rejected the first step or two of every burst,
+         * which around a home is most of the walking there is.
+         */
+        const val MAX_STEP_INTERVAL_MILLIS = 1_800L
 
-        /** How far apart two intervals may be and still start a bout. */
+        /**
+         * How far one stride may differ from *the one before it*.
+         *
+         * Comparing neighbours rather than requiring the whole window to
+         * agree is the point: leaving a standstill the intervals shorten step
+         * by step, and arriving they lengthen, so a window test forbids
+         * precisely the accelerating and decelerating bursts that indoor
+         * walking is made of. A trend is gait; scatter is not.
+         *
+         * The figure is unchanged from the window test it replaces — what
+         * changed is the question being asked, which is why recall improved
+         * without the gate being loosened.
+         */
         const val CADENCE_TOLERANCE = 0.20f
 
         /**
@@ -208,17 +225,29 @@ private class GaitAnalyzer(private val onStep: (Float) -> Unit) {
          * enforced, since without it one lucky confirmation would let
          * arbitrarily irregular motion keep counting forever.
          */
-        const val IN_BOUT_TOLERANCE = 0.25f
+        const val IN_BOUT_TOLERANCE = 0.20f
 
         /** Weight of history in the running estimate of the walker's cadence. */
         const val CADENCE_SMOOTHING = 0.7f
 
         /**
-         * Four rather than three roughly halves the number of fidget peaks
-         * that slip through, for the cost of never registering a walk shorter
-         * than four steps.
+         * Steps that must line up before any are counted.
+         *
+         * Four rejects fidgeting well but never registers a walk shorter than
+         * four steps — and moving around a home is largely three-step bursts
+         * between turns, so it silently discarded much of the real walking.
+         * Three is the compromise; the cost is paid back by the tolerance
+         * above being trend-aware rather than loosened outright.
          */
-        const val STEPS_TO_CONFIRM_BOUT = 4
+        const val STEPS_TO_CONFIRM_BOUT = 3
+
+        /**
+         * Consecutive off-cadence strides tolerated before the walk is
+         * treated as over. One alone is usually a turn or a doorway rather
+         * than a stop, and ending the bout there costs the next three steps
+         * while it re-confirms.
+         */
+        const val MAX_BOUT_MISSES = 2
 
         const val WEINBERG_K = 0.5f
         const val MIN_STEP_LENGTH_METERS = 0.3f
@@ -234,6 +263,7 @@ private class GaitAnalyzer(private val onStep: (Float) -> Unit) {
 
     private val pending = mutableListOf<Candidate>()
     private var cadenceMillis: Float? = null
+    private var boutMisses = 0
 
     fun onSample(vertical: Float, atMillis: Long) {
         if (vertical > windowMax) windowMax = vertical
@@ -269,15 +299,28 @@ private class GaitAnalyzer(private val onStep: (Float) -> Unit) {
             .coerceIn(MIN_STEP_LENGTH_METERS, MAX_STEP_LENGTH_METERS)
 
         val cadence = cadenceMillis
-        if (interval != null && cadence != null) {
+        if (interval != null && cadence != null && interval <= MAX_STEP_INTERVAL_MILLIS) {
             val strayed = abs(interval - cadence) / cadence
-            if (interval <= MAX_STEP_INTERVAL_MILLIS && strayed <= IN_BOUT_TOLERANCE) {
+            if (strayed <= IN_BOUT_TOLERANCE) {
+                boutMisses = 0
                 cadenceMillis = CADENCE_SMOOTHING * cadence + (1 - CADENCE_SMOOTHING) * interval
                 onStep(stepLength)
                 return
             }
+            // Off cadence, but a turn or a doorway looks like this too. Count
+            // it and follow the new pace rather than abandoning the walk on
+            // the first stride that does not fit.
+            boutMisses++
+            if (boutMisses < MAX_BOUT_MISSES) {
+                cadenceMillis = CADENCE_SMOOTHING * cadence + (1 - CADENCE_SMOOTHING) * interval
+                onStep(stepLength)
+                return
+            }
+        }
+        if (cadenceMillis != null) {
             // Stopped, or the rhythm fell apart — earn confirmation again.
             cadenceMillis = null
+            boutMisses = 0
         }
 
         if (interval == null || interval > MAX_STEP_INTERVAL_MILLIS) pending.clear()
@@ -295,18 +338,30 @@ private class GaitAnalyzer(private val onStep: (Float) -> Unit) {
     }
 
     /**
-     * The mean stride interval of [candidates] when every gap between them is
-     * a plausible stride *and* they all match each other closely enough to be
-     * one cadence; null when they don't look like walking.
+     * The stride interval to start the walk at, when every gap between
+     * [candidates] is a plausible stride *and* each follows on from the one
+     * before it closely enough to be the same walk; null when they don't look
+     * like walking.
+     *
+     * Each interval is compared with its neighbour rather than all of them
+     * with each other, so a cadence that steadily quickens or slows still
+     * reads as one walk. That is not a loophole — accelerating away from a
+     * standstill and slowing into a stop is what a burst of indoor walking
+     * *is*, and demanding the whole window agree rejected it wholesale.
+     *
+     * The most recent interval is returned rather than the mean, since after
+     * an acceleration the latest pace is the one about to continue.
      */
     private fun steadyCadenceOf(candidates: List<Candidate>): Float? {
         val intervals = candidates.zipWithNext { earlier, later -> later.atMillis - earlier.atMillis }
+        if (intervals.isEmpty()) return null
         if (intervals.any { it < MIN_STEP_INTERVAL_MILLIS || it > MAX_STEP_INTERVAL_MILLIS }) {
             return null
         }
-        val slowest = intervals.maxOrNull() ?: return null
-        val fastest = intervals.minOrNull() ?: return null
-        if (slowest - fastest > CADENCE_TOLERANCE * slowest) return null
-        return intervals.average().toFloat()
+        val consistent = intervals.zipWithNext().all { (earlier, later) ->
+            abs(later - earlier) <= CADENCE_TOLERANCE * maxOf(earlier, later)
+        }
+        if (!consistent) return null
+        return intervals.last().toFloat()
     }
 }
