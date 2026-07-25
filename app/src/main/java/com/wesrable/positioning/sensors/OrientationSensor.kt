@@ -48,13 +48,36 @@ class OrientationSensor(context: Context) {
 
     private companion object {
         /**
-         * Fraction of the compass/gyro disagreement removed per sample. At
-         * ~50 Hz this is a time constant of about 20 s: fast enough that gyro
-         * bias cannot wander far, slow enough that walking past a fridge
-         * moves the heading by a fraction of a degree rather than following
-         * the disturbance.
+         * How long to let the compass set north before largely ignoring it.
+         *
+         * North only has to be established *once*: it is needed so that
+         * sessions share a frame with the stored map, not to steer the walk.
+         * So the compass is given real authority at the start, while the
+         * device is likely still and the reading has not yet been contradicted,
+         * and almost none afterwards.
          */
-        const val NORTH_CORRECTION_GAIN = 0.001f
+        const val ALIGNMENT_MILLIS = 4_000L
+
+        /** Time constant of roughly 1 s, to settle on north quickly at first. */
+        const val ALIGNMENT_GAIN = 0.02f
+
+        /**
+         * Fraction of the compass/gyro disagreement removed per sample once
+         * aligned — a time constant of about 200 s.
+         *
+         * It was twenty times faster than this, on the reasoning that it
+         * should be slow enough for walking past a fridge to move the heading
+         * only a fraction of a degree. That reasoning holds for one
+         * disturbance passed once. It fails badly on a small circuit walked
+         * repeatedly, where the whole path sits inside a distorted field and
+         * the compass tells a different story in every corner: over a
+         * minute-long walk the filter had time to follow it, and successive
+         * laps came out rotated from each other rather than on top.
+         *
+         * Slow enough now to be a leash on gyro bias over many minutes rather
+         * than anything that steers a walk.
+         */
+        const val NORTH_CORRECTION_GAIN = 0.00005f
 
         /**
          * Below this the platform is telling us the magnetometer needs
@@ -72,6 +95,8 @@ class OrientationSensor(context: Context) {
         var lastGyroAzimuth: Float? = null
         var compassAzimuth = 0f
         var compassAccuracy = 0
+        /** When north-seeking began, so it can be wound down after a few seconds. */
+        var alignmentStartedAt: Long? = null
         var pitch = 0f
         var roll = 0f
 
@@ -106,6 +131,9 @@ class OrientationSensor(context: Context) {
                         val previous = lastGyroAzimuth
                         lastGyroAzimuth = gyroAzimuth
 
+                        if (alignmentStartedAt == null && fusedAzimuth != null) {
+                            alignmentStartedAt = event.timestamp / 1_000_000
+                        }
                         val current = fusedAzimuth
                         if (current == null) {
                             // No compass fix yet; nothing to anchor to.
@@ -115,7 +143,10 @@ class OrientationSensor(context: Context) {
                         // Turn by however much the gyro says we turned.
                         var updated = current + (if (previous == null) 0f else difference(gyroAzimuth, previous))
                         if (compassAccuracy >= MIN_USABLE_COMPASS_ACCURACY) {
-                            updated += NORTH_CORRECTION_GAIN * difference(compassAzimuth, updated)
+                            val elapsed = (event.timestamp / 1_000_000) - (alignmentStartedAt ?: 0L)
+                            val aligning = alignmentStartedAt != null && elapsed < ALIGNMENT_MILLIS
+                            val gain = if (aligning) ALIGNMENT_GAIN else NORTH_CORRECTION_GAIN
+                            updated += gain * difference(compassAzimuth, updated)
                         }
                         fusedAzimuth = normalize(updated)
                         emit()

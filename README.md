@@ -376,13 +376,26 @@ creeps with gyro bias and has no idea where north is, which the persistent map
 requires, since sessions can only share a frame because their axes are
 north-referenced.
 
-The two are therefore combined. Turns come from the gyro, and the result is
-pulled towards magnetic north with a time constant of about 20 seconds — fast
-enough that gyro bias cannot wander far, slow enough that walking past a
-fridge moves the heading a fraction of a degree instead of following the
-disturbance. The pull is suspended entirely while Android reports the
-magnetometer as needing calibration, and the orientation card says which of
-those is happening rather than leaving it invisible.
+The two are therefore combined, but asymmetrically, and the balance took a
+real-world test to get right. North only has to be established *once* — it is
+needed so sessions share a frame with the stored map, not to steer the walk —
+so the compass is given real authority for the first few seconds and almost
+none afterwards (a time constant of about 200 s, a leash on gyro bias rather
+than a steering input). The pull is suspended entirely while Android reports
+the magnetometer as needing calibration, and the orientation card says which
+of those is happening rather than leaving it invisible.
+
+It was first built with a 20-second constant, on the reasoning that this is
+slow enough for walking past a fridge to move the heading only a fraction of a
+degree. That reasoning holds for one disturbance passed once, and fails on a
+small circuit walked repeatedly. Walking a 1.5 × 3 m L-shaped path four times
+produced a trail whose segment lengths were about right but whose four passes
+fanned out, each rotated from the last: the whole path sat inside a distorted
+field, the compass told a different story in every corner, and over a
+minute-long walk the filter had four time constants in which to follow it. A
+tight circuit is also the harshest possible heading test, since it is mostly
+turns — sixteen or more of them — and heading error compounds per turn rather
+than per metre.
 
 ### Telling walking apart from fidgeting
 
