@@ -180,17 +180,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(savedRooms = emptyList(), roomEstimate = RoomEstimate(null, 0.0)) }
     }
 
-    /**
-     * Corrects dead reckoning's heading for however the phone is actually
-     * being held: call while walking in a known direction (the position
-     * card's "I'm facing forward" button) and every step after this is
-     * measured relative to the current raw compass reading instead of
-     * absolute north — see [DeadReckoningTracker.calibrateHeading].
-     */
-    fun calibrateHeading() {
-        engine.calibrateHeading(latestOrientation.azimuthDeg)
-    }
-
     private fun pruneStaleBle() {
         val cutoff = System.currentTimeMillis() - STALE_BLE_MILLIS
         bleSignals.entries.removeAll { it.value.lastSeenMillis < cutoff }

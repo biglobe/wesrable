@@ -59,7 +59,7 @@ fun MainScreen(
                 PositionCard(
                     position = state.position,
                     stepCount = state.stepCount,
-                    onCalibrateHeading = { viewModel.calibrateHeading() },
+                    headingDeg = state.orientation.azimuthDeg,
                 )
             }
             item {

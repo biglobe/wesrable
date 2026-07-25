@@ -126,21 +126,21 @@ with distance travelled (typically ~5% of path length) absent periodic RF
 corrections. For applications that need real precision, see the higher-fidelity
 methods below.
 
-**Dead reckoning's heading can point the wrong way entirely.** The heading
-fed into `DeadReckoningTracker.onStep` is the raw device-attitude azimuth
-from `TYPE_ROTATION_VECTOR` — literally "which way the top of the phone is
-pointing," not "which way the person is walking." Those only match if the
-phone is held upright with its top aimed straight ahead; hold it tilted,
-flat, or however people naturally glance at a screen while walking, and the
-two can diverge by any amount, including a full reversal (walking forward
-can render as the dot moving backward). There's no way to derive true
-walking direction from device attitude alone without knowing the (variable,
-unknown) carry angle. The mitigation is the "I'm facing forward" button on
-the position card: tap it while walking in a known direction, and
-`DeadReckoningTracker.calibrateHeading` locks in an offset that corrects
-subsequent steps for however the phone is actually being held — it doesn't
-fix a heading that keeps changing relative to the walking direction (e.g.
-swinging in hand), only a *constant* offset, which covers the common case.
+**The position map is heading-up, not north-up.** `DeadReckoningTracker`
+accumulates true (east, north) displacement from the compass heading at each
+step — that part is a straightforward, correct compass-to-Cartesian
+conversion. But `PositionCard` renders it *heading-up*: "▲ forward" on the
+map always means "the direction you're currently facing," not north (the
+same convention a phone nav app's walking mode uses), by projecting the
+accumulated displacement onto (forward, right) relative to the live compass
+reading at render time. Without this, a fixed north-up map only shows
+forward motion as moving up the screen if you happen to be walking due
+north — walking any other direction (say, south) would correctly move the
+dot down, which reads as "backward" even though the underlying math was
+right. If the dot's motion still doesn't track your own steps after this,
+suspect device-attitude/carry-angle mismatch instead (phone held tilted or
+flat rather than upright with its top aimed the way you're walking) — that
+genuinely biases the raw heading itself, which no display transform can fix.
 
 ## Building
 
