@@ -5,8 +5,10 @@ import com.wesrable.positioning.model.BleSignal
 import com.wesrable.positioning.model.LoopClosure
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
+import com.wesrable.positioning.model.RelocalizationState
 import com.wesrable.positioning.model.RoomAnchor
 import com.wesrable.positioning.model.RoomEstimate
+import com.wesrable.positioning.model.StoredMap
 import com.wesrable.positioning.model.WifiSignal
 
 /**
@@ -39,6 +41,59 @@ class PositioningEngine(
     /** Loops closed on a magnetic match rather than an RSSI one. */
     var magneticClosureCount: Int = 0
         private set
+
+    private var storedMap: StoredMap = StoredMap()
+    private var relocalizer: Relocalizer = Relocalizer(emptyList())
+
+    /** How far this session has got towards placing itself in the stored map. */
+    var relocalizationState: RelocalizationState = RelocalizationState.NO_MAP
+        private set
+
+    /** Once located, roughly how well — the spread of the agreeing estimates. */
+    var relocalizationUncertaintyMeters: Double? = null
+        private set
+
+    /** The map from previous sessions, for drawing beneath the live trail. */
+    val storedTrail: List<Pair<Double, Double>> get() = storedMap.trail
+
+    /**
+     * Adopts a map recorded in earlier sessions. Until the session recognises
+     * where in it the walker is standing, the two are simply unrelated: the
+     * stored map is drawn and searched, but nothing of this session is added
+     * to it.
+     */
+    fun loadMap(map: StoredMap) {
+        storedMap = map
+        relocalizer = Relocalizer(map.waypoints)
+        relocalizationState =
+            if (map.isEmpty) RelocalizationState.NO_MAP else RelocalizationState.SEARCHING
+    }
+
+    /**
+     * The map to persist: the stored one plus this session's contribution,
+     * but only once the two are known to share a frame. An unlocated session
+     * has coordinates relative to an origin nobody can find again, so merging
+     * it would smear the map rather than extend it.
+     */
+    fun exportMap(): StoredMap = when (relocalizationState) {
+        RelocalizationState.SEARCHING -> storedMap
+        else -> StoredMap(
+            waypoints = storedMap.waypoints + loopClosure.waypointsForMap(),
+            trail = storedMap.trail + deadReckoning.trail,
+            roomAnchors = mergeRoomAnchors(storedMap.roomAnchors, roomAnchorMap.anchors),
+        )
+    }
+
+    private fun mergeRoomAnchors(
+        stored: List<RoomAnchor>,
+        live: List<RoomAnchor>,
+    ): List<RoomAnchor> {
+        // A room seen again this session supersedes the remembered one: it was
+        // just observed, where the stored copy may predate furniture moving.
+        val byLabel = stored.associateBy { it.label }.toMutableMap()
+        live.forEach { byLabel[it.label] = it }
+        return byLabel.values.toList()
+    }
 
     /** Total footsteps counted since the engine was created. */
     val stepCount: Int get() = deadReckoning.totalSteps
@@ -109,15 +164,38 @@ class PositioningEngine(
         wifiScanGeneration: Long,
     ) {
         val position = deadReckoning.currentPosition()
+
+        if (relocalizationState == RelocalizationState.SEARCHING) {
+            relocalizer.observe(
+                wifiRssi = wifiRssi,
+                bleRssi = bleRssi,
+                magneticMagnitudeUt = magneticMagnitudeUt,
+                sessionEast = position.xMeters,
+                sessionNorth = position.yMeters,
+                pathLengthMeters = deadReckoning.pathLengthMeters,
+            )?.let { fix ->
+                // The shape walked so far was right all along; only its place
+                // in the world was unknown. Slide it there bodily.
+                deadReckoning.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
+                loopClosure.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
+                roomAnchorMap.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
+                magneticSequences.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
+                relocalizationState = RelocalizationState.LOCATED
+                relocalizationUncertaintyMeters = fix.uncertaintyMeters
+            }
+        }
+
         // The sharper of the two constraints first, when the user has turned
         // it on: a magnetic match is worth well under a meter where an RSSI
         // one is worth several, so applying it first leaves less for the
         // coarse one to find.
         if (magneticClosureEnabled) {
+            // Read afresh: a rebase just above may have moved us.
+            val here = deadReckoning.currentPosition()
             magneticSequences.observe(
                 magnitudeUt = magneticMagnitudeUt,
-                xMeters = position.xMeters,
-                yMeters = position.yMeters,
+                xMeters = here.xMeters,
+                yMeters = here.yMeters,
                 pathLengthMeters = deadReckoning.pathLengthMeters,
             )?.let { magneticClosure ->
                 applyClosure(magneticClosure)

@@ -1,6 +1,7 @@
 package com.wesrable.positioning.positioning
 
 import com.wesrable.positioning.model.LoopClosure
+import com.wesrable.positioning.model.MapWaypoint
 import com.wesrable.positioning.model.TrailWaypoint
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -177,6 +178,34 @@ class LoopClosureTracker(
                 xMeters = waypoint.xMeters - driftEast * fraction,
                 yMeters = waypoint.yMeters - driftNorth * fraction,
             )
+        }
+    }
+
+    /**
+     * This session's waypoints in the form the persistent map keeps them:
+     * position plus signature, with the path length dropped since it means
+     * nothing once the walk that produced it is over.
+     */
+    fun waypointsForMap(): List<MapWaypoint> = waypoints.map {
+        MapWaypoint(
+            xMeters = it.xMeters,
+            yMeters = it.yMeters,
+            wifiRssi = it.wifiRssi,
+            bleRssi = it.bleRssi,
+            magneticMagnitudeUt = it.magneticMagnitudeUt,
+        )
+    }
+
+    /** Slides every waypoint bodily, for a rebase onto a stored map. */
+    fun translate(east: Double, north: Double) {
+        for (index in waypoints.indices) {
+            waypoints[index] = waypoints[index].copy(
+                xMeters = waypoints[index].xMeters + east,
+                yMeters = waypoints[index].yMeters + north,
+            )
+        }
+        for (index in closures.indices) {
+            closures[index] = closures[index].first + east to closures[index].second + north
         }
     }
 

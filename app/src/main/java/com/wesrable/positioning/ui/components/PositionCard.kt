@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
+import com.wesrable.positioning.model.RelocalizationState
 import com.wesrable.positioning.model.RoomAnchor
 import kotlin.math.cos
 import kotlin.math.floor
@@ -98,6 +99,11 @@ fun PositionCard(
     magneticClosureCount: Int,
     magneticClosureEnabled: Boolean,
     onMagneticClosureChange: (Boolean) -> Unit,
+    storedTrail: List<Pair<Double, Double>>,
+    relocalizationState: RelocalizationState,
+    relocalizationUncertaintyMeters: Double?,
+    storedWaypointCount: Int,
+    onForgetMap: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -125,6 +131,29 @@ fun PositionCard(
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when (relocalizationState) {
+                        RelocalizationState.NO_MAP ->
+                            "No saved map — this walk becomes one."
+                        RelocalizationState.SEARCHING ->
+                            "Saved map of $storedWaypointCount places — walk a little so " +
+                                "it can work out where in it you are. Until then this " +
+                                "session stays separate and won't be added to it."
+                        RelocalizationState.LOCATED ->
+                            "Located in the saved map" +
+                                (relocalizationUncertaintyMeters?.let {
+                                    " to about %.1f m".format(it)
+                                } ?: "") +
+                                " — this walk is extending it."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                if (storedWaypointCount > 0) {
+                    OutlinedButton(onClick = onForgetMap) { Text("Forget") }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(
                     checked = magneticClosureEnabled,
@@ -252,6 +281,32 @@ fun PositionCard(
                         return Offset(
                             originX + (right * pixelsPerMeter).toFloat(),
                             originY - (forward * pixelsPerMeter).toFloat(),
+                        )
+                    }
+
+                    // The map from earlier sessions, drawn faintly underneath.
+                    // While still searching this is only *approximately*
+                    // where it belongs, since the two frames are not yet
+                    // related — it is shown anyway so there is something to
+                    // recognise the place by.
+                    if (storedTrail.size > 1) {
+                        val storedPath = Path()
+                        storedTrail.forEachIndexed { index, (east, north) ->
+                            val point = project(east, north)
+                            if (index == 0) {
+                                storedPath.moveTo(point.x, point.y)
+                            } else {
+                                storedPath.lineTo(point.x, point.y)
+                            }
+                        }
+                        drawPath(
+                            storedPath,
+                            color = if (relocalizationState == RelocalizationState.LOCATED) {
+                                Color(0x55607D8B)
+                            } else {
+                                Color(0x22607D8B)
+                            },
+                            style = Stroke(width = 3f),
                         )
                     }
 

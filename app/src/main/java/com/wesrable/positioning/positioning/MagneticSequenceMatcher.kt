@@ -140,6 +140,14 @@ class MagneticSequenceMatcher {
         }
     }
 
+    /** Slides every sample bodily, for a rebase onto a stored map. */
+    fun translate(east: Double, north: Double) {
+        samples.forEach {
+            it.x += east
+            it.y += north
+        }
+    }
+
     private fun findRevisit(currentPathLength: Double): LoopClosure? {
         if (samples.size < WINDOW_SAMPLES * 2) return null
 

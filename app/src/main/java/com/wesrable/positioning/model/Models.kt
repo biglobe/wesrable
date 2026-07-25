@@ -132,6 +132,56 @@ data class TrailWaypoint(
 )
 
 /**
+ * One place in the *persistent* map: a signal signature with coordinates that
+ * outlive the session that recorded them.
+ *
+ * The trail's axes are not arbitrary — east and north are integrated from the
+ * compass, so every session already shares the same orientation and differs
+ * only in where its origin happened to land. That is what makes a stored map
+ * reusable at all: recovering it needs a translation, with no rotation to
+ * solve for.
+ */
+data class MapWaypoint(
+    val xMeters: Double,
+    val yMeters: Double,
+    val wifiRssi: Map<String, Int>,
+    val bleRssi: Map<String, Int>,
+    val magneticMagnitudeUt: Float?,
+)
+
+/** Everything remembered about a place between sessions. */
+data class StoredMap(
+    val waypoints: List<MapWaypoint> = emptyList(),
+    val trail: List<Pair<Double, Double>> = emptyList(),
+    val roomAnchors: List<RoomAnchor> = emptyList(),
+) {
+    val isEmpty: Boolean get() = waypoints.isEmpty() && trail.isEmpty()
+}
+
+/**
+ * Where this session sits within the stored map: add this offset to a session
+ * coordinate to get a map coordinate.
+ */
+data class Relocalization(
+    val offsetEastMeters: Double,
+    val offsetNorthMeters: Double,
+    /** Spread of the agreeing estimates — roughly how far off this may be. */
+    val uncertaintyMeters: Double,
+)
+
+/** How far the app has got towards placing itself in the stored map. */
+enum class RelocalizationState {
+    /** Nothing stored, so this session *is* the map. */
+    NO_MAP,
+
+    /** A map exists but the app hasn't recognised where in it we are yet. */
+    SEARCHING,
+
+    /** Located: session coordinates have been rebased onto the stored map. */
+    LOCATED,
+}
+
+/**
  * A detected revisit: the walker is judged to be back at the place recorded
  * by the waypoint at [matchedIndex]. [driftEastMeters]/[driftNorthMeters] is
  * how far the dead-reckoned position has slipped between the two visits —

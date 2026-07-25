@@ -68,6 +68,11 @@ fun MainScreen(
                     magneticClosureCount = state.magneticClosureCount,
                     magneticClosureEnabled = state.magneticClosureEnabled,
                     onMagneticClosureChange = { viewModel.setMagneticClosureEnabled(it) },
+                    storedTrail = state.storedTrail,
+                    relocalizationState = state.relocalizationState,
+                    relocalizationUncertaintyMeters = state.relocalizationUncertaintyMeters,
+                    storedWaypointCount = state.storedWaypointCount,
+                    onForgetMap = { viewModel.forgetMap() },
                 )
             }
             item {

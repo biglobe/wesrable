@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wesrable.positioning.fingerprint.FingerprintMatcher
 import com.wesrable.positioning.fingerprint.FingerprintStore
+import com.wesrable.positioning.fingerprint.MapStore
 import com.wesrable.positioning.model.Anchor
 import com.wesrable.positioning.model.BarometricReading
 import com.wesrable.positioning.model.BleSignal
@@ -12,8 +13,10 @@ import com.wesrable.positioning.model.Fingerprint
 import com.wesrable.positioning.model.Orientation
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
+import com.wesrable.positioning.model.RelocalizationState
 import com.wesrable.positioning.model.RoomAnchor
 import com.wesrable.positioning.model.RoomEstimate
+import com.wesrable.positioning.model.StoredMap
 import com.wesrable.positioning.model.WifiSignal
 import com.wesrable.positioning.positioning.PositioningEngine
 import com.wesrable.positioning.scan.BleScanner
@@ -41,6 +44,10 @@ data class UiState(
     val stepCount: Int = 0,
     val trail: List<Pair<Double, Double>> = emptyList(),
     val closurePoints: List<Pair<Double, Double>> = emptyList(),
+    val storedTrail: List<Pair<Double, Double>> = emptyList(),
+    val relocalizationState: RelocalizationState = RelocalizationState.NO_MAP,
+    val relocalizationUncertaintyMeters: Double? = null,
+    val storedWaypointCount: Int = 0,
     val closureCount: Int = 0,
     val magneticClosureCount: Int = 0,
     val magneticClosureEnabled: Boolean = false,
@@ -75,14 +82,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val stepDetector = StepDetector(application)
     private val engine = PositioningEngine()
     private val fingerprintStore = FingerprintStore(application)
+    private val mapStore = MapStore(application)
 
     /** Populated via a one-time site calibration; empty by default because
      * anchor coordinates cannot be derived from RF alone (see README). */
     private val anchors: Map<String, Anchor> = emptyMap()
 
+    /**
+     * Whatever earlier sessions left behind, adopted so this one extends a
+     * map of the place rather than starting a fresh drawing. Read once and
+     * handed straight to the engine.
+     */
+    private val loadedMap = mapStore.load().also { engine.loadMap(it) }
+
     private val _uiState = MutableStateFlow(
         UiState(
             savedRooms = fingerprintStore.labelCounts(),
+            storedTrail = loadedMap.trail,
+            relocalizationState = engine.relocalizationState,
+            storedWaypointCount = loadedMap.waypoints.size,
             wifiAvailable = wifiScanner.isAvailable,
             bleAvailable = bleScanner.isAvailable,
             orientationAvailable = orientationSensor.isAvailable,
@@ -173,7 +191,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopSensing() {
         sensingJobs.forEach { it.cancel() }
         sensingJobs = emptyList()
+        saveMap()
         _uiState.update { it.copy(isSensing = false) }
+    }
+
+    /**
+     * Writes the session back into the stored map. The engine declines to
+     * merge a session that never worked out where it was, since its
+     * coordinates are relative to an origin nothing can find again — so
+     * calling this is always safe, and does nothing when it should.
+     */
+    private fun saveMap() {
+        if (engine.stepCount == 0) return
+        runCatching { mapStore.save(engine.exportMap()) }
+    }
+
+    /**
+     * Throws away the remembered map. Useful after moving house, or when the
+     * map has been corrupted by a session that located itself wrongly — there
+     * is otherwise no way back from a bad merge.
+     */
+    fun forgetMap() {
+        mapStore.clear()
+        engine.loadMap(StoredMap())
+        _uiState.update {
+            it.copy(
+                storedTrail = emptyList(),
+                storedWaypointCount = 0,
+                relocalizationState = engine.relocalizationState,
+                relocalizationUncertaintyMeters = null,
+            )
+        }
     }
 
     /**
@@ -270,6 +318,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 stepCount = engine.stepCount,
                 trail = engine.trail,
                 closurePoints = engine.closurePoints,
+                relocalizationState = engine.relocalizationState,
+                relocalizationUncertaintyMeters = engine.relocalizationUncertaintyMeters,
                 closureCount = engine.closureCount,
                 magneticClosureCount = engine.magneticClosureCount,
                 lastClosureDriftMeters = engine.lastClosureDriftMeters,

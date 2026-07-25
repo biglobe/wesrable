@@ -162,6 +162,16 @@ class RoomAnchorMap(
         }
     }
 
+    /** Slides every marker bodily, for a rebase onto a stored map. */
+    fun translate(east: Double, north: Double) {
+        (byLabel.values + recordedByLabel.values).forEach { sightings ->
+            sightings.forEach {
+                it.x += east
+                it.y += north
+            }
+        }
+    }
+
     private fun medianOf(values: List<Double>): Double {
         val sorted = values.sorted()
         val middle = sorted.size / 2

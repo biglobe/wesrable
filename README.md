@@ -140,6 +140,66 @@ Renaming onto a name already in the list merges the two rooms, which is the
 natural way to reconcile one room recorded under two spellings; the markers
 merge with them.
 
+### The persistent map, and finding yourself in it
+
+Until now the geometry died with the session. Coordinates are relative to
+wherever the app happened to be launched, so nothing survived except the room
+fingerprints — the app labelled rooms persistently but redrew the place from
+nothing every time. `MapStore` and `Relocalizer` close that.
+
+**Recovering the frame is only a translation.** East and north are integrated
+from the compass, not from an arbitrary starting orientation, so every session
+already shares the stored map's axes and differs only in where its origin
+landed. There is no rotation to solve for, which removes the hardest and most
+ambiguous part of the problem before it starts.
+
+**Finding the translation.** Live signals are matched against the stored
+waypoints; the nearest five vote on where in the map the walker is standing,
+and the gap between that and the session's own idea of its position is a
+candidate offset. One candidate is never trusted — RSSI matching is good to
+only a few meters, and occasionally points somewhere else entirely — so
+offsets are collected as the walker moves and the lock is taken only when four
+successive ones agree to within 4 m. On locking, the session's trail, its
+waypoints, its room markers and its magnetic samples are all slid bodily onto
+the map: the shape walked so far was right, only its place in the world was
+unknown.
+
+Measured against a clean map, over 60 runs per case:
+
+| Home | Waypoints | Located | Median error | Worst | Walked first |
+|---|---|---|---|---|---|
+| studio 4×3 m | 4 | 19/60 | 0.68 m | 1.14 m | 67 m |
+| small flat 6×5 m | 8 | 60/60 | 0.76 m | 1.88 m | 36 m |
+| house floor 10×8 m | 20 | 60/60 | 0.55 m | 1.48 m | 7 m |
+| large floor 18×14 m | 63 | 60/60 | 0.66 m | 1.83 m | 7 m |
+
+Sub-metre from a measurement good to only ±5 m, because aggregation beats the
+noise — five neighbours vote, four independent fixes must agree, and the
+median is taken. **No false lock occurred in 360 runs.** A studio declines
+more often than it locks, which is the right failure: too few distinguishable
+places to be sure, so it says nothing rather than guessing.
+
+**The limit is the map, not the matching.** Running the whole cycle through
+the real engine — session one walks and exports, session two loads and
+relocalizes — the error at the moment of locking is 7.5 m, not 0.5 m. That is
+not the relocalizer failing. Session one's own map was already 7.9 m off
+truth, because a long walk accumulates drift that loop closure only partly
+removes, and relocalization faithfully recovers your place *in that map*,
+inheriting whatever it got wrong. The two figures track each other almost
+exactly.
+
+That is the classic SLAM coupling: map quality and localization quality bound
+each other, and separating them needs a global optimisation over the whole
+trajectory — a pose graph — rather than the local rubber-sheeting here. It is
+the same missing machinery the 2D magnetic map would need, and the natural
+next thing to build.
+
+**Merging is guarded.** A session that never located itself is never written
+into the map; its coordinates are relative to an origin nothing can find
+again, so merging it would smear the map rather than extend it. There is a
+**Forget** button for the case where a session locates wrongly and corrupts
+what was stored, since nothing else recovers from a bad merge.
+
 ### Reading the map
 
 The position box is portrait (3:4) and sized off the width actually available
@@ -345,9 +405,9 @@ app/src/main/java/com/wesrable/positioning/
   sensors/          OrientationSensor, BarometerSensor, MagnetometerSensor, StepDetector
   scan/             WifiScanner, BleScanner, BleAdvertisementParser
   positioning/       RssiDistance, Trilateration, DeadReckoningTracker, RoomAnchorMap,
-                     MagneticSequenceMatcher,
+                     MagneticSequenceMatcher, Relocalizer,
                      LoopClosureTracker, PositioningEngine
-  fingerprint/      FingerprintStore, FingerprintMatcher
+  fingerprint/      FingerprintStore, FingerprintMatcher, MapStore
   ui/               Jetpack Compose screens
   MainActivity.kt, MainViewModel.kt
 ```

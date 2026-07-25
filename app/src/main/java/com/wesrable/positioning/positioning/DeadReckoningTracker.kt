@@ -116,5 +116,19 @@ class DeadReckoningTracker {
         y -= driftNorth
     }
 
+    /**
+     * Slides the whole trail bodily, without deforming it. Used once a
+     * session recognises where it sits in a stored map: the shape walked so
+     * far is right, only its position in the world was unknown.
+     */
+    fun translate(east: Double, north: Double) {
+        x += east
+        y += north
+        trailPoints.forEach {
+            it.x += east
+            it.y += north
+        }
+    }
+
     fun currentPosition() = PositionEstimate(x, y, PositionSource.DEAD_RECKONING, 0.0)
 }
