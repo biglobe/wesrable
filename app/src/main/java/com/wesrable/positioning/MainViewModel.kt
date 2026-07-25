@@ -3,17 +3,22 @@ package com.wesrable.positioning
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.wesrable.positioning.fingerprint.FingerprintMatcher
+import com.wesrable.positioning.fingerprint.FingerprintStore
 import com.wesrable.positioning.model.Anchor
 import com.wesrable.positioning.model.BarometricReading
 import com.wesrable.positioning.model.BleSignal
+import com.wesrable.positioning.model.Fingerprint
 import com.wesrable.positioning.model.Orientation
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
+import com.wesrable.positioning.model.RoomEstimate
 import com.wesrable.positioning.model.WifiSignal
 import com.wesrable.positioning.positioning.PositioningEngine
 import com.wesrable.positioning.scan.BleScanner
 import com.wesrable.positioning.scan.WifiScanner
 import com.wesrable.positioning.sensors.BarometerSensor
+import com.wesrable.positioning.sensors.MagnetometerSensor
 import com.wesrable.positioning.sensors.OrientationSensor
 import com.wesrable.positioning.sensors.StepDetector
 import kotlinx.coroutines.Job
@@ -33,10 +38,14 @@ data class UiState(
     val barometer: BarometricReading? = null,
     val position: PositionEstimate = PositionEstimate(0.0, 0.0, PositionSource.UNAVAILABLE, 0.0),
     val stepCount: Int = 0,
+    val magneticMagnitudeUt: Float? = null,
+    val roomEstimate: RoomEstimate = RoomEstimate(null, 0.0),
+    val savedRooms: List<Pair<String, Int>> = emptyList(),
     val wifiAvailable: Boolean = false,
     val bleAvailable: Boolean = false,
     val orientationAvailable: Boolean = false,
     val barometerAvailable: Boolean = false,
+    val magnetometerAvailable: Boolean = false,
     val isSensing: Boolean = false,
 )
 
@@ -54,8 +63,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val wifiScanner = WifiScanner(application)
     private val bleScanner = BleScanner(application)
     private val barometerSensor = BarometerSensor(application)
+    private val magnetometerSensor = MagnetometerSensor(application)
     private val stepDetector = StepDetector(application)
     private val engine = PositioningEngine()
+    private val fingerprintStore = FingerprintStore(application)
 
     /** Populated via a one-time site calibration; empty by default because
      * anchor coordinates cannot be derived from RF alone (see README). */
@@ -63,10 +74,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(
         UiState(
+            savedRooms = fingerprintStore.labelCounts(),
             wifiAvailable = wifiScanner.isAvailable,
             bleAvailable = bleScanner.isAvailable,
             orientationAvailable = orientationSensor.isAvailable,
             barometerAvailable = barometerSensor.isAvailable,
+            magnetometerAvailable = magnetometerSensor.isAvailable,
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -74,6 +87,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val bleSignals = LinkedHashMap<String, BleSignal>()
     private var latestOrientation = Orientation()
     private var latestWifi: List<WifiSignal> = emptyList()
+    private var latestMagneticMagnitudeUt: Float? = null
 
     private var sensingJobs: List<Job> = emptyList()
 
@@ -122,6 +136,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     recompute()
                 }
             },
+            viewModelScope.launch {
+                magnetometerSensor.readings().resilient().collect { magnitude ->
+                    latestMagneticMagnitudeUt = magnitude
+                    recompute()
+                }
+            },
         )
     }
 
@@ -129,6 +149,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sensingJobs.forEach { it.cancel() }
         sensingJobs = emptyList()
         _uiState.update { it.copy(isSensing = false) }
+    }
+
+    /**
+     * Records a labeled fingerprint of the current WiFi/BLE RSSI + magnetic
+     * field at wherever the device is right now — the "calibration walk"
+     * step of room-level fingerprint matching. Call once per room (ideally a
+     * few times per room, from different spots in it, for a more robust
+     * match) before relying on [UiState.roomEstimate].
+     */
+    fun recordFingerprint(label: String) {
+        val trimmedLabel = label.trim()
+        if (trimmedLabel.isEmpty()) return
+
+        fingerprintStore.add(
+            Fingerprint(
+                label = trimmedLabel,
+                wifiRssi = latestWifi.associate { it.bssid to it.rssiDbm },
+                bleRssi = bleSignals.values.associate { it.identifier to it.rssiDbm },
+                magneticMagnitudeUt = latestMagneticMagnitudeUt ?: 0f,
+                recordedAtMillis = System.currentTimeMillis(),
+            )
+        )
+        _uiState.update { it.copy(savedRooms = fingerprintStore.labelCounts()) }
+        recompute()
+    }
+
+    fun clearFingerprints() {
+        fingerprintStore.clear()
+        _uiState.update { it.copy(savedRooms = emptyList(), roomEstimate = RoomEstimate(null, 0.0)) }
     }
 
     private fun pruneStaleBle() {
@@ -139,6 +188,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun recompute() {
         val ble = bleSignals.values.toList()
         val position = engine.fuse(latestWifi, ble, anchors)
+        val roomEstimate = FingerprintMatcher.estimate(
+            liveWifi = latestWifi,
+            liveBle = ble,
+            liveMagneticMagnitudeUt = latestMagneticMagnitudeUt,
+            fingerprints = fingerprintStore.all,
+        )
         _uiState.update {
             it.copy(
                 orientation = latestOrientation,
@@ -146,6 +201,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 bleSignals = ble.sortedByDescending { s -> s.rssiDbm },
                 position = position,
                 stepCount = engine.stepCount,
+                magneticMagnitudeUt = latestMagneticMagnitudeUt,
+                roomEstimate = roomEstimate,
             )
         }
     }

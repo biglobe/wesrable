@@ -19,6 +19,7 @@ import com.wesrable.positioning.ui.components.BleListCard
 import com.wesrable.positioning.ui.components.OrientationCard
 import com.wesrable.positioning.ui.components.PermissionCard
 import com.wesrable.positioning.ui.components.PositionCard
+import com.wesrable.positioning.ui.components.RoomFingerprintCard
 import com.wesrable.positioning.ui.components.WifiListCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +57,14 @@ fun MainScreen(
             }
             item {
                 PositionCard(position = state.position, stepCount = state.stepCount)
+            }
+            item {
+                RoomFingerprintCard(
+                    savedRooms = state.savedRooms,
+                    roomEstimate = state.roomEstimate,
+                    onRecord = { label -> viewModel.recordFingerprint(label) },
+                    onClear = { viewModel.clearFingerprints() },
+                )
             }
             item {
                 BarometerCard(

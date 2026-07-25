@@ -53,3 +53,23 @@ data class BarometricReading(
     val altitudeMeters: Float,
     val relativeFloor: Int,
 )
+
+/**
+ * One labeled sample recorded during a calibration walk: the RSSI seen from
+ * every visible WiFi/BLE landmark plus the ambient magnetic field strength,
+ * all captured at a point the user identified by name (e.g. "Kitchen").
+ * No coordinates are needed — matching is purely against this signature.
+ */
+data class Fingerprint(
+    val label: String,
+    val wifiRssi: Map<String, Int>,
+    val bleRssi: Map<String, Int>,
+    val magneticMagnitudeUt: Float,
+    val recordedAtMillis: Long,
+)
+
+/** Result of matching a live signal snapshot against the stored fingerprint map. */
+data class RoomEstimate(
+    val label: String?,
+    val confidence: Double,
+)

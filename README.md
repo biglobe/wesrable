@@ -17,6 +17,7 @@ connects to a Bluetooth device, and requests no `INTERNET` permission at all.
 | 2D position (with calibrated anchors) | Least-squares multilateration | Needs ≥3 landmarks with known coordinates (see Calibration below) |
 | 2D position (always-on fallback) | Pedestrian dead reckoning | Step detection (accelerometer or `TYPE_STEP_DETECTOR`) × heading, integrated from a start point. Zero radios required. |
 | Floor / relative altitude | `TYPE_PRESSURE` barometer | ~3 m per floor heuristic, relative to session start |
+| Room identification | WiFi/BLE RSSI + magnetic-field fingerprint matching | Weighted k-NN against a map you record once by walking each room; no coordinates needed (see below) |
 
 RF-based and dead-reckoning position estimates are fused with a simple
 inverse-variance weighted blend (`PositioningEngine.fuse`), so the app keeps
@@ -49,14 +50,45 @@ as the calibration target instead of a WiFi BSSID — that identifier lives in
 the advertisement payload, not the radio's MAC, so it doesn't move when the
 beacon reboots or a mesh node gets swapped.
 
+### Room-level fingerprint matching
+
+Trilateration needs precisely surveyed anchor coordinates; dead reckoning
+drifts without correction. Room-level fingerprinting sidesteps both: walk to
+a room, name it in the "Room fingerprint map" card, tap **Record** (a few
+samples per room, from different spots in it, makes the match more robust) —
+that snapshots every visible WiFi BSSID's RSSI, every visible BLE
+identifier's RSSI, and the ambient magnetic field strength
+(`MagnetometerSensor`, magnitude only — rotation-invariant, so it doesn't
+matter how you're holding the phone) into a `Fingerprint`
+(`FingerprintStore`, persisted to a small file in app-private storage —
+no database dependency). Once a few rooms are recorded, every live signal
+snapshot is matched against all stored samples with weighted k-nearest-neighbor
+(`FingerprintMatcher`) — the classic RADAR-style (Bahl & Padmanabhan, 2000)
+indoor fingerprinting technique — and the UI shows the best-matching room
+plus a confidence score.
+
+This is a genuinely different technique from the trilateration/dead-reckoning
+position estimate above: no coordinates, no calibrated anchors, just pattern
+matching against a map you walked once. It gets you "which room," not an
+(x, y) position — realistically that means room-level accuracy (or
+ambiguous results in small open-plan spaces with similar signal exposure
+between adjacent rooms), not the centimeter-level position a robot vacuum's
+LIDAR/wheel-encoder SLAM achieves. The fundamental gap versus real SLAM is
+**loop closure**: a vacuum recognizes when it's revisited an exact spot and
+snaps its estimate back onto a persistent map; this app has no equivalent —
+every match is independent, there's no map-building or drift correction
+beyond what's already recorded.
+
 ## Project layout
 
 ```
 app/src/main/java/com/wesrable/positioning/
-  model/            Orientation, WifiSignal, BleSignal, Anchor, PositionEstimate...
-  sensors/          OrientationSensor, BarometerSensor, StepDetector
+  model/            Orientation, WifiSignal, BleSignal, Anchor, PositionEstimate,
+                     Fingerprint, RoomEstimate...
+  sensors/          OrientationSensor, BarometerSensor, MagnetometerSensor, StepDetector
   scan/             WifiScanner, BleScanner, BleAdvertisementParser
   positioning/       RssiDistance, Trilateration, DeadReckoningTracker, PositioningEngine
+  fingerprint/      FingerprintStore, FingerprintMatcher
   ui/               Jetpack Compose screens
   MainActivity.kt, MainViewModel.kt
 ```
@@ -74,6 +106,10 @@ app/src/main/java/com/wesrable/positioning/
   `neverForLocation`.
 - `ACCESS_WIFI_STATE` / `CHANGE_WIFI_STATE` — read scan results / request a
   scan.
+- `ACTIVITY_RECOGNITION` (API 29+) — required for `TYPE_STEP_DETECTOR`/
+  `TYPE_STEP_COUNTER` to deliver any events at all; without it those sensors
+  register successfully but silently never fire. `StepDetector` falls back
+  to accelerometer-based step detection if this is denied.
 - **No `INTERNET`, no `ACCESS_NETWORK_STATE`.** The app cannot phone home
   even if it wanted to.
 - `BLUETOOTH_CONNECT` is intentionally **not** requested — the BLE scanner
@@ -124,7 +160,7 @@ authenticate, or exchange application data over a network.
 | **BLE Channel Sounding / AoA-AoD direction finding** | ~cm-dm | Bluetooth 5.1+ Constant Tone Extension lets a receiver compute angle-of-arrival from a beacon's *advertisement*, still zero connection | Needs BT 5.1+ radios and antenna arrays on the anchor side |
 | **Raw GNSS measurements** | ~1-5 m outdoors | `GnssMeasurement`/`LocationManager` with `GPS_PROVIDER` receives satellite signals directly — no cellular data or A-GPS network fetch needed | Outdoor/line-of-sight only; slow cold-start without assistance data |
 | **Cellular signal fingerprint (no data session)** | ~50-500 m | `TelephonyManager.getAllCellInfo()` reads serving + neighbor cell IDs and signal strength from the radio's existing registration — no APN/data connection opened | Coarse; needs a self-collected cell-ID→location map, since no live carrier database lookup is allowed |
-| **Geomagnetic fingerprinting** | ~1-3 m indoors | Steel/rebar in buildings creates a stable, location-specific magnetic-field pattern; match live magnetometer readings against a fingerprint map you walked and recorded once, entirely offline | Needs an initial survey walk; can drift if the building's fixtures change |
+| **Geomagnetic + RF fingerprinting** *(implemented — see Room-level fingerprint matching above)* | Room-level | Steel/rebar creates a stable, location-specific magnetic-field pattern; combined with WiFi/BLE RSSI and matched via weighted k-NN against a map you walk and record once, entirely offline | Needs an initial survey walk; can drift if the building's fixtures/APs change; gives a room label, not (x, y) coordinates |
 | **Pedestrian dead reckoning** (already implemented) | Drifts ~5%/m travelled | Pure IMU integration, zero radios | Needs periodic correction from any of the above |
 | **Visual-inertial odometry (ARCore / VIO)** | cm-level, drifts over time | Camera + IMU fused locally on-device (ARCore's `Session` works fully offline) | Needs decent lighting/texture; drifts without loop closure or markers |
 | **Acoustic time-of-flight ranging** | ~cm-dm | Speaker emits an inaudible (18-22 kHz) chirp, microphone(s) on nearby devices/anchors measure arrival time — pure local audio hardware, no radio at all | Needs synchronized clocks or a round-trip protocol; limited range |
