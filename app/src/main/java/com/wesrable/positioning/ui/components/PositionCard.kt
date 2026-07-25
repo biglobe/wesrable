@@ -2,7 +2,7 @@ package com.wesrable.positioning.ui.components
 
 import android.graphics.Paint as AndroidPaint
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,10 +31,41 @@ import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
 import com.wesrable.positioning.model.RoomAnchor
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.sin
 
 private const val PIXELS_PER_METER = 24f
 private const val COMPASS_RING_DP = 48
+private const val MIN_ZOOM = 0.2f
+private const val MAX_ZOOM = 8f
+
+/** Below this the grid stops reading as a grid and starts reading as fill. */
+private const val MIN_GRID_SPACING_PX = 22f
+
+/** Grid intervals that make sense spoken aloud, for the scale bar to name. */
+private val GRID_STEPS_METERS =
+    listOf(0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0)
+
+/**
+ * Coarsens the grid as the view zooms out, so it stays legible instead of
+ * collapsing into a grey wash — and keeps the number of lines drawn bounded
+ * however far out the user pinches.
+ */
+private fun gridStepMeters(pixelsPerMeter: Float): Double =
+    GRID_STEPS_METERS.firstOrNull { it * pixelsPerMeter >= MIN_GRID_SPACING_PX }
+        ?: GRID_STEPS_METERS.last()
+
+/** Turns a screen offset clockwise; screen y grows downward, hence the signs. */
+private fun rotateOffset(offset: Offset, degrees: Float): Offset {
+    if (degrees == 0f) return offset
+    val radians = Math.toRadians(degrees.toDouble())
+    val sinR = sin(radians).toFloat()
+    val cosR = cos(radians).toFloat()
+    return Offset(
+        offset.x * cosR - offset.y * sinR,
+        offset.x * sinR + offset.y * cosR,
+    )
+}
 
 @Composable
 fun PositionCard(
@@ -70,10 +101,12 @@ fun PositionCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                "Heading-up map, centered on you — the top always means the direction " +
-                    "you're currently facing, and the blue dot stays centered as you walk, " +
-                    "with the trail and start point (grey dot) moving around it. Drag to " +
-                    "look around the rest of the trail; the ring shows where north is. " +
+                "Heading-up map, centered on you — the top means the direction you're " +
+                    "facing, and the blue dot stays centered as you walk, with the trail " +
+                    "and start point (grey dot) moving around it. Drag to look around, " +
+                    "pinch to zoom, twist with two fingers to turn the map (twist until " +
+                    "N is at the top for a north-up map). The ring shows where north is " +
+                    "and its tick where you're facing; the bar gives the scale. " +
                     "Purple marks your rooms — a solid dot is where you stood to record " +
                     "one, a hollow dot with a ~ is a room from an earlier session placed " +
                     "by matching, so only accurate to a few meters. Green rings mark " +
@@ -81,15 +114,33 @@ fun PositionCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             var panOffset by remember { mutableStateOf(Offset.Zero) }
+            var zoom by remember { mutableStateOf(1f) }
+
+            // Degrees the user has twisted the map away from heading-up. Zero
+            // means the top is the way they're facing, as before.
+            var manualRotationDeg by remember { mutableStateOf(0f) }
+
             Box(Modifier.padding(top = 8.dp)) {
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
+                        .height(220.dp)
                         .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                panOffset += dragAmount
+                            detectTransformGestures { _, pan, gestureZoom, gestureRotation ->
+                                val newZoom = (zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                val appliedZoom = newZoom / zoom
+                                // Pinching and twisting work about the middle
+                                // of the box rather than about the walker, so
+                                // panning away to inspect a far part of the
+                                // trail and then zooming doesn't fling it off
+                                // screen. That means the pan offset has to be
+                                // scaled and turned to match.
+                                panOffset = rotateOffset(
+                                    panOffset * appliedZoom,
+                                    gestureRotation,
+                                ) + pan
+                                zoom = newZoom
+                                manualRotationDeg += gestureRotation
                             }
                         }
                 ) {
@@ -100,19 +151,24 @@ fun PositionCard(
                     // panOffset == (centerX, centerY): where the live dot sits.
                     val originX = size.width / 2 + panOffset.x
                     val originY = size.height / 2 + panOffset.y
+                    val pixelsPerMeter = PIXELS_PER_METER * zoom
+                    val stepMeters = gridStepMeters(pixelsPerMeter)
+                    val stepPx = (stepMeters * pixelsPerMeter).toFloat()
 
-                    // Reference grid, one line per meter.
-                    var gx = 0f
+                    // Reference grid, anchored on the walker and stepped to
+                    // whatever interval reads well at this zoom. Walking the
+                    // grid across the box, rather than outwards from the
+                    // origin, keeps it covering the view however far the user
+                    // has panned.
+                    var gx = originX - floor(originX / stepPx) * stepPx
                     while (gx < size.width) {
-                        drawLine(Color(0xFFE0E0E0), Offset(originX + gx, 0f), Offset(originX + gx, size.height))
-                        drawLine(Color(0xFFE0E0E0), Offset(originX - gx, 0f), Offset(originX - gx, size.height))
-                        gx += PIXELS_PER_METER
+                        drawLine(Color(0xFFE0E0E0), Offset(gx, 0f), Offset(gx, size.height))
+                        gx += stepPx
                     }
-                    var gy = 0f
+                    var gy = originY - floor(originY / stepPx) * stepPx
                     while (gy < size.height) {
-                        drawLine(Color(0xFFE0E0E0), Offset(0f, originY + gy), Offset(size.width, originY + gy))
-                        drawLine(Color(0xFFE0E0E0), Offset(0f, originY - gy), Offset(size.width, originY - gy))
-                        gy += PIXELS_PER_METER
+                        drawLine(Color(0xFFE0E0E0), Offset(0f, gy), Offset(size.width, gy))
+                        gy += stepPx
                     }
 
                     // Rotate every (east, north) point — relative to the
@@ -123,7 +179,13 @@ fun PositionCard(
                     // mode. The whole trail is re-projected every frame, so
                     // it swings around consistently as you turn, and shifts
                     // as you walk so the dot stays put at the camera center.
-                    val headingRad = Math.toRadians(headingDeg.toDouble())
+                    //
+                    // Twisting the map subtracts from that heading, which is
+                    // what lets the user break out of heading-up and hold any
+                    // orientation they like — including north-up, by twisting
+                    // until the N marker sits at the top.
+                    val effectiveHeadingDeg = headingDeg - manualRotationDeg
+                    val headingRad = Math.toRadians(effectiveHeadingDeg.toDouble())
                     val sinH = sin(headingRad)
                     val cosH = cos(headingRad)
 
@@ -133,8 +195,8 @@ fun PositionCard(
                         val forward = relEast * sinH + relNorth * cosH
                         val right = relEast * cosH - relNorth * sinH
                         return Offset(
-                            originX + (right * PIXELS_PER_METER).toFloat(),
-                            originY - (forward * PIXELS_PER_METER).toFloat(),
+                            originX + (right * pixelsPerMeter).toFloat(),
+                            originY - (forward * pixelsPerMeter).toFloat(),
                         )
                     }
 
@@ -194,24 +256,50 @@ fun PositionCard(
                     }
 
                     val currentPoint = project(position.xMeters, position.yMeters)
-                    val confidencePx = (position.confidenceRadiusMeters * PIXELS_PER_METER).toFloat()
+                    val confidencePx = (position.confidenceRadiusMeters * pixelsPerMeter).toFloat()
                     drawCircle(Color(0x333D7FD9), radius = confidencePx.coerceAtLeast(4f), center = currentPoint)
                     drawCircle(Color(0xFF3D7FD9), radius = 10f, center = currentPoint)
+
+                    // Scale bar. With zoom free to roam the grid alone no
+                    // longer says how big anything is, so name the interval.
+                    val barY = size.height - 14f
+                    val barStart = 14f
+                    val barEnd = barStart + stepPx
+                    val barColor = Color(0xFF616161)
+                    drawLine(barColor, Offset(barStart, barY), Offset(barEnd, barY), strokeWidth = 2f)
+                    drawLine(barColor, Offset(barStart, barY - 4f), Offset(barStart, barY + 4f), strokeWidth = 2f)
+                    drawLine(barColor, Offset(barEnd, barY - 4f), Offset(barEnd, barY + 4f), strokeWidth = 2f)
+                    drawContext.canvas.nativeCanvas.drawText(
+                        if (stepMeters >= 1.0) "%.0f m".format(stepMeters) else "%.1f m".format(stepMeters),
+                        barStart,
+                        barY - 8f,
+                        AndroidPaint().apply {
+                            color = android.graphics.Color.parseColor("#616161")
+                            textSize = 22f
+                            textAlign = AndroidPaint.Align.LEFT
+                            isAntiAlias = true
+                        },
+                    )
                 }
                 NorthCompassRing(
-                    headingDeg = headingDeg,
+                    headingDeg = headingDeg - manualRotationDeg,
+                    forwardTickDeg = manualRotationDeg,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(4.dp),
                 )
-                if (panOffset != Offset.Zero) {
+                if (panOffset != Offset.Zero || zoom != 1f || manualRotationDeg != 0f) {
                     OutlinedButton(
-                        onClick = { panOffset = Offset.Zero },
+                        onClick = {
+                            panOffset = Offset.Zero
+                            zoom = 1f
+                            manualRotationDeg = 0f
+                        },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(4.dp),
                     ) {
-                        Text("Recenter")
+                        Text("Reset view")
                     }
                 }
             }
@@ -220,13 +308,22 @@ fun PositionCard(
 }
 
 /**
- * A small ring showing where true north currently is, relative to the
- * heading-up map above: the ring's top always represents "forward" (same
- * convention as the map), and the "N" marker orbits it as the device turns
- * — directly ahead when facing north, behind when facing south, etc.
+ * A small ring showing where true north currently is, relative to the map
+ * above: the "N" marker orbits the ring as the device turns — directly ahead
+ * when facing north, behind when facing south, and so on.
+ *
+ * [headingDeg] is the bearing shown at the top of the map, which is the
+ * device heading only while the map is left heading-up. [forwardTickDeg] is
+ * where the direction the walker is actually facing has ended up once they
+ * twist the map away from that, so the tick stops being a fixed decoration
+ * and starts carrying the information the top of the screen used to.
  */
 @Composable
-private fun NorthCompassRing(headingDeg: Float, modifier: Modifier = Modifier) {
+private fun NorthCompassRing(
+    headingDeg: Float,
+    forwardTickDeg: Float,
+    modifier: Modifier = Modifier,
+) {
     Canvas(modifier = modifier.size(COMPASS_RING_DP.dp)) {
         val centerX = size.width / 2
         val centerY = size.height / 2
@@ -239,11 +336,18 @@ private fun NorthCompassRing(headingDeg: Float, modifier: Modifier = Modifier) {
             center = Offset(centerX, centerY),
             style = Stroke(width = 2f),
         )
-        // Forward tick, fixed at the top — matches the map's heading-up convention.
+        // Which way the walker is facing. At the top while the map is
+        // heading-up, swinging round as the map is twisted away from it.
+        val tickRad = Math.toRadians(forwardTickDeg.toDouble())
+        val tickSin = sin(tickRad).toFloat()
+        val tickCos = cos(tickRad).toFloat()
         drawLine(
             color = Color(0xFF616161),
-            start = Offset(centerX, centerY - ringRadius),
-            end = Offset(centerX, centerY - ringRadius + 6f),
+            start = Offset(centerX + ringRadius * tickSin, centerY - ringRadius * tickCos),
+            end = Offset(
+                centerX + (ringRadius - 6f) * tickSin,
+                centerY - (ringRadius - 6f) * tickCos,
+            ),
             strokeWidth = 3f,
         )
 

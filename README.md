@@ -140,6 +140,35 @@ Renaming onto a name already in the list merges the two rooms, which is the
 natural way to reconcile one room recorded under two spellings; the markers
 merge with them.
 
+### Reading the map
+
+The position box is heading-up by default: the top is the direction you're
+facing, the blue dot stays put in the middle, and the trail swings around it
+as you turn. It takes the usual map gestures — drag to pan, pinch to zoom
+(0.2×–8×), twist with two fingers to turn. **Reset view** restores all three
+at once.
+
+Twisting subtracts from the heading used to project the map, which is what
+lets it hold any orientation rather than only heading-up. Twisting until the
+N marker reaches the top gives a conventional north-up map, which is much
+easier to read against a floor plan. Because the top is then no longer
+"forward", the compass ring's tick stops being decoration and starts showing
+which way you're actually facing.
+
+Zoom and twist operate about the middle of the box rather than about the
+walker, so panning away to inspect a far corner of the trail and then
+zooming doesn't fling it off screen. The grid coarsens as you zoom out —
+0.5 m up to 500 m, whichever keeps the lines legible — and a scale bar names
+the current interval, since with free zoom the grid alone no longer says how
+big anything is.
+
+The projection is easy to get subtly wrong (an early version of the map had
+the walker apparently moving backwards), so the rotation signs are checked
+numerically rather than by eye: that heading-up puts east on the right when
+facing north and up when facing east, that a clockwise twist turns content
+clockwise, that twisting by your heading yields north-up, and that the pan
+offset and compass ring stay consistent with all of it.
+
 ### Loop closure: correcting drift on revisit
 
 Dead reckoning drifts, so walking a circuit of a building and returning to
