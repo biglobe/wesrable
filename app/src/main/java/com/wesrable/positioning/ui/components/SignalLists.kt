@@ -22,7 +22,8 @@ fun WifiListCard(signals: List<WifiSignal>, available: Boolean) {
                 !available -> Text("WiFi radio not available or disabled.")
                 signals.isEmpty() -> Text("Scanning…")
                 else -> signals.take(15).forEach { s ->
-                    Text("${s.ssid}  ·  ${s.rssiDbm} dBm  ·  ~${"%.1f".format(s.distanceMeters)} m")
+                    val label = if (s.ssid == "(hidden)") "(hidden) ${s.bssid}" else s.ssid
+                    Text("$label  ·  ${s.rssiDbm} dBm  ·  ~${"%.1f".format(s.distanceMeters)} m")
                     HorizontalDivider()
                 }
             }
