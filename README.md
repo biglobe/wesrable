@@ -126,6 +126,22 @@ with distance travelled (typically ~5% of path length) absent periodic RF
 corrections. For applications that need real precision, see the higher-fidelity
 methods below.
 
+**Dead reckoning's heading can point the wrong way entirely.** The heading
+fed into `DeadReckoningTracker.onStep` is the raw device-attitude azimuth
+from `TYPE_ROTATION_VECTOR` — literally "which way the top of the phone is
+pointing," not "which way the person is walking." Those only match if the
+phone is held upright with its top aimed straight ahead; hold it tilted,
+flat, or however people naturally glance at a screen while walking, and the
+two can diverge by any amount, including a full reversal (walking forward
+can render as the dot moving backward). There's no way to derive true
+walking direction from device attitude alone without knowing the (variable,
+unknown) carry angle. The mitigation is the "I'm facing forward" button on
+the position card: tap it while walking in a known direction, and
+`DeadReckoningTracker.calibrateHeading` locks in an offset that corrects
+subsequent steps for however the phone is actually being held — it doesn't
+fix a heading that keeps changing relative to the walking direction (e.g.
+swinging in hand), only a *constant* offset, which covers the common case.
+
 ## Building
 
 Requires Android Studio (or the Android SDK + `compileSdk 34`) — this repo's

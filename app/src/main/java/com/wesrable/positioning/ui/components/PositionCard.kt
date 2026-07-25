@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -19,7 +20,7 @@ import com.wesrable.positioning.model.PositionSource
 private const val PIXELS_PER_METER = 24f
 
 @Composable
-fun PositionCard(position: PositionEstimate, stepCount: Int) {
+fun PositionCard(position: PositionEstimate, stepCount: Int, onCalibrateHeading: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text("Position estimate (relative to start point)", style = MaterialTheme.typography.titleMedium)
@@ -29,6 +30,14 @@ fun PositionCard(position: PositionEstimate, stepCount: Int) {
                     "±${"%.1f".format(position.confidenceRadiusMeters)} m",
             )
             Text("Steps: $stepCount")
+            Text(
+                "If the dot moves the wrong way as you walk, the phone isn't held with " +
+                    "its top pointed the way you're actually walking — face forward and tap:",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(onClick = onCalibrateHeading, modifier = Modifier.padding(top = 4.dp)) {
+                Text("I'm facing forward")
+            }
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()

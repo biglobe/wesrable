@@ -26,6 +26,11 @@ class PositioningEngine(private val deadReckoning: DeadReckoningTracker = DeadRe
         deadReckoning.onStep(stepLengthMeters, headingDegrees)
     }
 
+    /** See [DeadReckoningTracker.calibrateHeading]. */
+    fun calibrateHeading(currentRawHeadingDeg: Float) {
+        deadReckoning.calibrateHeading(currentRawHeadingDeg)
+    }
+
     /**
      * @param anchors map keyed by the same identifier used in [WifiSignal.bssid] /
      *   [BleSignal.identifier], populated via a one-time site calibration (not included

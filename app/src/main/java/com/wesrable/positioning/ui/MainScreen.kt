@@ -56,7 +56,11 @@ fun MainScreen(
                 )
             }
             item {
-                PositionCard(position = state.position, stepCount = state.stepCount)
+                PositionCard(
+                    position = state.position,
+                    stepCount = state.stepCount,
+                    onCalibrateHeading = { viewModel.calibrateHeading() },
+                )
             }
             item {
                 RoomFingerprintCard(
