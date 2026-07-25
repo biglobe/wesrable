@@ -237,11 +237,54 @@ brings it to 6.9 m.
 
 The honest limitation is that 2 m of error is small absolutely but large
 *relative* to a 4 m room, so a small home's trail is meaningfully wrong and
-this technique cannot fix it. Two things could, neither implemented: a manual
-"I am back at this room" tap, which constrains against an exactly-recorded
-marker and so carries none of the match uncertainty that forces the 5 m floor;
-or matching *sequences* of magnetic-field readings, which vary on ~1 m scales
-indoors against RSSI's ~5–10 m.
+RSSI matching cannot fix it. `MagneticSequenceMatcher` is an attempt at the
+gap; it ships **off by default**, and the section below explains why.
+
+### Magnetic sequence matching, and why it is opt-in
+
+Steel and wiring impose structure on a building's magnetic field from tens of
+centimetres upward. A single reading is nearly useless for placing yourself,
+but the *sequence* of readings along a walked path is a signature. Measured
+on simulated walks through a structured field, sampled once per stride:
+
+| Offset from the original line | Match distance (median) |
+|---|---|
+| 0 m (same line) | 0.38 |
+| 0.25 m | 2.33 |
+| 1 m | 5.18 |
+
+Same-place p90 is 0.49 against 0.25 m-away p10 of 1.70 — cleanly separated,
+where RSSI's 0 m-p90 (3.81) barely undercut its 12 m-p10 (4.36). A *single*
+reading overlaps (0.70 against 0.34), so it is the sequence doing the work,
+not the magnetometer. Sample spacing barely matters between 0.25 m and 1 m,
+because most of the field's energy sits at wavelengths a stride resolves —
+which is what makes this possible at all, since the app only learns where it
+is once per step.
+
+So the resolution is there. Two things stop it being a default:
+
+- **It needs you to retrace nearly the same line.** At ±0.15 m of wobble it
+  is a large win — a 4×3 m studio walked 12 laps goes from 2.32 m to 1.40 m of
+  error, which is the room-scale correction RSSI cannot do. At ±0.4 m, closer
+  to how people actually walk, it barely fires, and where it does it is a mild
+  loss. Loosening the threshold to tolerate that admits laterally-offset
+  matches that are simply wrong: on a 10×8 m floor every loosened setting
+  tried made the error worse, 7.9 m to 9.4–9.9 m.
+- **A magnetically bland building cannot be told apart from a match.** Where
+  there is little steel the field varies so smoothly that a stretch 15 m away
+  still scores 0.86. A distinctiveness test — the winner must beat the median
+  candidate by 2× — helps but does not fix it, and the apparent small-room
+  wins in a bland field are an artifact of the room being small enough that
+  any match is roughly right, not of the matching working.
+
+The honest fix for the lateral-offset problem is not a better threshold but a
+different formulation: accumulate a 2D magnetic *map* and search over
+translations, so walking a parallel line is a shift to solve for rather than a
+mismatch. That is real magnetic SLAM and a much larger piece of work.
+
+Which regime a given home is in cannot be determined from here, so the switch
+is exposed with the trade stated, and the closure count reports magnetic
+matches separately so it is visible whether it is firing at all.
 
 With those in place, simulated routes shorter than 60 m are untouched, and a
 240 m circuit walked with heavy heading drift ends up **17.9 m → 9.6 m** from
@@ -302,6 +345,7 @@ app/src/main/java/com/wesrable/positioning/
   sensors/          OrientationSensor, BarometerSensor, MagnetometerSensor, StepDetector
   scan/             WifiScanner, BleScanner, BleAdvertisementParser
   positioning/       RssiDistance, Trilateration, DeadReckoningTracker, RoomAnchorMap,
+                     MagneticSequenceMatcher,
                      LoopClosureTracker, PositioningEngine
   fingerprint/      FingerprintStore, FingerprintMatcher
   ui/               Jetpack Compose screens

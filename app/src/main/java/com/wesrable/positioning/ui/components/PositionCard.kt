@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -93,6 +95,9 @@ fun PositionCard(
     closureCount: Int,
     lastClosureDriftMeters: Double?,
     roomAnchors: List<RoomAnchor>,
+    magneticClosureCount: Int,
+    magneticClosureEnabled: Boolean,
+    onMagneticClosureChange: (Boolean) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -113,12 +118,27 @@ fun PositionCard(
                             "house-sized floor rather than a single room."
                     else ->
                         "Loops closed: $closureCount" +
+                            (if (magneticClosureCount > 0) " (+$magneticClosureCount magnetic)" else "") +
                             (lastClosureDriftMeters?.let {
                                 " · last one pulled the trail %.1f m back into line".format(it)
                             } ?: "")
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = magneticClosureEnabled,
+                    onCheckedChange = onMagneticClosureChange,
+                )
+                Text(
+                    "Close loops on magnetic field too — experimental. Sharp enough " +
+                        "to correct a room-sized drift, but only where the building has " +
+                        "enough steel and you retrace nearly the same line; otherwise it " +
+                        "makes the trail slightly worse. Try it and see.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
             Text(
                 "Heading-up map, centered on you — the top means the direction you're " +
                     "facing, and the blue dot stays centered as you walk, with the trail " +

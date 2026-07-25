@@ -65,6 +65,9 @@ fun MainScreen(
                     closureCount = state.closureCount,
                     lastClosureDriftMeters = state.lastClosureDriftMeters,
                     roomAnchors = state.roomAnchors,
+                    magneticClosureCount = state.magneticClosureCount,
+                    magneticClosureEnabled = state.magneticClosureEnabled,
+                    onMagneticClosureChange = { viewModel.setMagneticClosureEnabled(it) },
                 )
             }
             item {

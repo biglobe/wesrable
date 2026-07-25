@@ -2,6 +2,7 @@ package com.wesrable.positioning.positioning
 
 import com.wesrable.positioning.model.Anchor
 import com.wesrable.positioning.model.BleSignal
+import com.wesrable.positioning.model.LoopClosure
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
 import com.wesrable.positioning.model.RoomAnchor
@@ -23,7 +24,21 @@ class PositioningEngine(
     private val deadReckoning: DeadReckoningTracker = DeadReckoningTracker(),
     private val loopClosure: LoopClosureTracker = LoopClosureTracker(),
     private val roomAnchorMap: RoomAnchorMap = RoomAnchorMap(),
+    private val magneticSequences: MagneticSequenceMatcher = MagneticSequenceMatcher(),
 ) {
+
+    /**
+     * Whether to also close loops on magnetic-field sequences. Off by
+     * default, and deliberately so: measured against simulated walks it is a
+     * large win in a steel-framed building when the same line is retraced
+     * closely, and a mild loss otherwise — and which of those a given home is
+     * cannot be known from here. See the README.
+     */
+    var magneticClosureEnabled: Boolean = false
+
+    /** Loops closed on a magnetic match rather than an RSSI one. */
+    var magneticClosureCount: Int = 0
+        private set
 
     /** Total footsteps counted since the engine was created. */
     val stepCount: Int get() = deadReckoning.totalSteps
@@ -94,9 +109,26 @@ class PositioningEngine(
         wifiScanGeneration: Long,
     ) {
         val position = deadReckoning.currentPosition()
+        // The sharper of the two constraints first, when the user has turned
+        // it on: a magnetic match is worth well under a meter where an RSSI
+        // one is worth several, so applying it first leaves less for the
+        // coarse one to find.
+        if (magneticClosureEnabled) {
+            magneticSequences.observe(
+                magnitudeUt = magneticMagnitudeUt,
+                xMeters = position.xMeters,
+                yMeters = position.yMeters,
+                pathLengthMeters = deadReckoning.pathLengthMeters,
+            )?.let { magneticClosure ->
+                applyClosure(magneticClosure)
+                magneticClosureCount++
+            }
+        }
+
+        val current = deadReckoning.currentPosition()
         val closure = loopClosure.observe(
-            xMeters = position.xMeters,
-            yMeters = position.yMeters,
+            xMeters = current.xMeters,
+            yMeters = current.yMeters,
             pathLengthMeters = deadReckoning.pathLengthMeters,
             wifiRssi = wifiRssi,
             bleRssi = bleRssi,
@@ -104,25 +136,25 @@ class PositioningEngine(
             wifiScanGeneration = wifiScanGeneration,
         ) ?: return
 
-        deadReckoning.rubberSheet(
-            anchorPathLength = closure.anchorPathLengthMeters,
-            endPathLength = closure.currentPathLengthMeters,
-            driftEast = closure.driftEastMeters,
-            driftNorth = closure.driftNorthMeters,
-        )
-        loopClosure.applyCorrection(
-            anchorPathLength = closure.anchorPathLengthMeters,
-            endPathLength = closure.currentPathLengthMeters,
-            driftEast = closure.driftEastMeters,
-            driftNorth = closure.driftNorthMeters,
-        )
-        roomAnchorMap.applyCorrection(
-            anchorPathLength = closure.anchorPathLengthMeters,
-            endPathLength = closure.currentPathLengthMeters,
-            driftEast = closure.driftEastMeters,
-            driftNorth = closure.driftNorthMeters,
-        )
+        applyClosure(closure)
         closureCount++
+    }
+
+    /**
+     * Removes a recognised drift from the trail and from every structure
+     * expressed against it, so markers and stored waypoints keep pointing at
+     * the part of the path they were observed at.
+     */
+    private fun applyClosure(closure: LoopClosure) {
+        val anchor = closure.anchorPathLengthMeters
+        val end = closure.currentPathLengthMeters
+        val east = closure.driftEastMeters
+        val north = closure.driftNorthMeters
+
+        deadReckoning.rubberSheet(anchor, end, east, north)
+        loopClosure.applyCorrection(anchor, end, east, north)
+        roomAnchorMap.applyCorrection(anchor, end, east, north)
+        magneticSequences.applyCorrection(anchor, end, east, north)
         lastClosureDriftMeters = closure.driftMeters
     }
 

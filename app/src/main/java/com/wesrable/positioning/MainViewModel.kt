@@ -42,6 +42,8 @@ data class UiState(
     val trail: List<Pair<Double, Double>> = emptyList(),
     val closurePoints: List<Pair<Double, Double>> = emptyList(),
     val closureCount: Int = 0,
+    val magneticClosureCount: Int = 0,
+    val magneticClosureEnabled: Boolean = false,
     val lastClosureDriftMeters: Double? = null,
     val magneticMagnitudeUt: Float? = null,
     val roomEstimate: RoomEstimate = RoomEstimate(null, 0.0),
@@ -217,6 +219,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         recompute()
     }
 
+    /**
+     * Turns magnetic-sequence loop closure on or off. Off by default; see
+     * [PositioningEngine.magneticClosureEnabled] for why it is the user's
+     * call rather than a default.
+     */
+    fun setMagneticClosureEnabled(enabled: Boolean) {
+        engine.magneticClosureEnabled = enabled
+        _uiState.update { it.copy(magneticClosureEnabled = enabled) }
+    }
+
     fun clearFingerprints() {
         // Collected before clearing, since afterwards the store has no idea
         // which labels existed to drop from the map.
@@ -259,6 +271,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 trail = engine.trail,
                 closurePoints = engine.closurePoints,
                 closureCount = engine.closureCount,
+                magneticClosureCount = engine.magneticClosureCount,
                 lastClosureDriftMeters = engine.lastClosureDriftMeters,
                 magneticMagnitudeUt = latestMagneticMagnitudeUt,
                 roomEstimate = roomEstimate,
