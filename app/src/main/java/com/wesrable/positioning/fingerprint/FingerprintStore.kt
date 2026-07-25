@@ -35,6 +35,29 @@ class FingerprintStore(context: Context) {
         if (file.exists()) file.delete()
     }
 
+    /** Drops every sample recorded under [label]. */
+    fun remove(label: String) {
+        if (!samples.removeAll { it.label == label }) return
+        if (samples.isEmpty()) clear() else persist()
+    }
+
+    /**
+     * Relabels every sample of [oldLabel]. Renaming onto a name already in use
+     * merges the two rooms, which is the natural way to combine a room that
+     * got recorded under two spellings.
+     */
+    fun rename(oldLabel: String, newLabel: String) {
+        val cleaned = newLabel.replace('\t', ' ').replace('\n', ' ').trim()
+        if (cleaned.isEmpty() || cleaned == oldLabel) return
+        var changed = false
+        for (index in samples.indices) {
+            if (samples[index].label != oldLabel) continue
+            samples[index] = samples[index].copy(label = cleaned)
+            changed = true
+        }
+        if (changed) persist()
+    }
+
     private fun load() {
         samples.clear()
         if (!file.exists()) return

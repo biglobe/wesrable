@@ -194,13 +194,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 recordedAtMillis = System.currentTimeMillis(),
             )
         )
+        // Where the user is standing right now is exactly where this room is,
+        // no matching required — the best marker the map can have.
+        engine.markRecordedRoom(trimmedLabel)
+        _uiState.update { it.copy(savedRooms = fingerprintStore.labelCounts()) }
+        recompute()
+    }
+
+    fun deleteFingerprint(label: String) {
+        fingerprintStore.remove(label)
+        engine.forgetRoom(label)
+        _uiState.update { it.copy(savedRooms = fingerprintStore.labelCounts()) }
+        recompute()
+    }
+
+    fun renameFingerprint(oldLabel: String, newLabel: String) {
+        val trimmed = newLabel.trim()
+        if (trimmed.isEmpty() || trimmed == oldLabel) return
+        fingerprintStore.rename(oldLabel, trimmed)
+        engine.renameRoom(oldLabel, trimmed)
         _uiState.update { it.copy(savedRooms = fingerprintStore.labelCounts()) }
         recompute()
     }
 
     fun clearFingerprints() {
+        // Collected before clearing, since afterwards the store has no idea
+        // which labels existed to drop from the map.
+        val labels = fingerprintStore.labelCounts().map { it.first }
         fingerprintStore.clear()
-        _uiState.update { it.copy(savedRooms = emptyList(), roomEstimate = RoomEstimate(null, 0.0)) }
+        labels.forEach { engine.forgetRoom(it) }
+        _uiState.update {
+            it.copy(
+                savedRooms = emptyList(),
+                roomEstimate = RoomEstimate(null, 0.0),
+                roomAnchors = engine.roomAnchors,
+            )
+        }
     }
 
     private fun pruneStaleBle() {

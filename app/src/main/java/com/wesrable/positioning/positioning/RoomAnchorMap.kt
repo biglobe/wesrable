@@ -88,7 +88,18 @@ class RoomAnchorMap(
 
     private class Sighting(var x: Double, var y: Double, val pathLength: Double)
 
+    /** Where each room was *matched* — inferred, and only good to a few meters. */
     private val byLabel = linkedMapOf<String, MutableList<Sighting>>()
+
+    /**
+     * Where the user actually stood to record each fingerprint. Exact, since
+     * it needs no matching at all, so it supersedes the inferred position.
+     * Session-scoped like everything else in trail coordinates: a fingerprint
+     * recorded in an earlier session outlives its origin and can only be
+     * placed by matching again.
+     */
+    private val recordedByLabel = linkedMapOf<String, MutableList<Sighting>>()
+
     private var lastSightingAtPathLength = Double.NEGATIVE_INFINITY
 
     /**
@@ -101,15 +112,55 @@ class RoomAnchorMap(
      * simply ignores it as long as most sightings are sound.
      */
     val anchors: List<RoomAnchor>
-        get() = byLabel.mapNotNull { (label, sightings) ->
-            if (sightings.size < MIN_SIGHTINGS_TO_SHOW) return@mapNotNull null
+        get() = (recordedByLabel.keys + byLabel.keys).mapNotNull { label ->
+            val recorded = recordedByLabel[label]
+            if (!recorded.isNullOrEmpty()) {
+                return@mapNotNull RoomAnchor(
+                    label = label,
+                    xMeters = medianOf(recorded.map { it.x }),
+                    yMeters = medianOf(recorded.map { it.y }),
+                    sightings = recorded.size,
+                    isExact = true,
+                )
+            }
+            val seen = byLabel[label]
+            if (seen == null || seen.size < MIN_SIGHTINGS_TO_SHOW) return@mapNotNull null
             RoomAnchor(
                 label = label,
-                xMeters = medianOf(sightings.map { it.x }),
-                yMeters = medianOf(sightings.map { it.y }),
-                sightings = sightings.size,
+                xMeters = medianOf(seen.map { it.x }),
+                yMeters = medianOf(seen.map { it.y }),
+                sightings = seen.size,
+                isExact = false,
             )
         }
+
+    /**
+     * Records exactly where the user stood to capture a fingerprint. Unlike
+     * [note] this needs no gating: there is no matching involved and so no
+     * chance of it being the wrong room.
+     */
+    fun markRecorded(label: String, xMeters: Double, yMeters: Double, pathLengthMeters: Double) {
+        recordedByLabel.getOrPut(label) { mutableListOf() }
+            .add(Sighting(xMeters, yMeters, pathLengthMeters))
+    }
+
+    /** Drops a room the user deleted, so its marker leaves the map with it. */
+    fun forget(label: String) {
+        byLabel.remove(label)
+        recordedByLabel.remove(label)
+    }
+
+    /**
+     * Follows a rename, merging into the destination if the user renamed one
+     * room onto the name of another — which is how two labels get combined.
+     */
+    fun rename(oldLabel: String, newLabel: String) {
+        if (oldLabel == newLabel) return
+        byLabel.remove(oldLabel)?.let { byLabel.getOrPut(newLabel) { mutableListOf() }.addAll(it) }
+        recordedByLabel.remove(oldLabel)?.let {
+            recordedByLabel.getOrPut(newLabel) { mutableListOf() }.addAll(it)
+        }
+    }
 
     private fun medianOf(values: List<Double>): Double {
         val sorted = values.sorted()
@@ -123,6 +174,7 @@ class RoomAnchorMap(
 
     fun reset() {
         byLabel.clear()
+        recordedByLabel.clear()
         lastSightingAtPathLength = Double.NEGATIVE_INFINITY
     }
 
@@ -171,7 +223,7 @@ class RoomAnchorMap(
         val span = endPathLength - anchorPathLength
         if (span <= 0.0) return
 
-        byLabel.values.forEach { sightings ->
+        (byLabel.values + recordedByLabel.values).forEach { sightings ->
             sightings.forEach { sighting ->
                 val fraction = when {
                     sighting.pathLength <= anchorPathLength -> 0.0

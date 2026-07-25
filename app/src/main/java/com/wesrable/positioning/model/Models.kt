@@ -100,6 +100,12 @@ data class RoomAnchor(
     val xMeters: Double,
     val yMeters: Double,
     val sightings: Int,
+    /**
+     * True when this came from where the user actually stood to record the
+     * fingerprint, which is known exactly, rather than being inferred from
+     * where the room later matched — which is only good to a few meters.
+     */
+    val isExact: Boolean,
 )
 
 /**

@@ -89,16 +89,24 @@ worth a few meters, where a LIDAR's is worth centimeters.)
 
 Room fingerprints deliberately carry no coordinates — that's what lets you
 record one by standing somewhere and typing a name. It also leaves them
-unplaceable on the trail map. `RoomAnchorMap` closes that gap
-opportunistically: whenever a room matches while you're walking, the
-dead-reckoned position of that moment is an observation of where the room is,
-and repeat sightings settle it onto the part of the floor that answers to
-that fingerprint. Labels are then drawn on the position map, and are
-rubber-sheeted along with the trail whenever a loop closes so they don't
-slide out of alignment with it.
+unplaceable on the trail map. `RoomAnchorMap` fixes that from two directions,
+and draws both on the position map, rubber-sheeted along with the trail
+whenever a loop closes so they don't slide out of alignment with it.
 
-Three things make this survive contact with noisy matching, all of them added
-after simulation showed the naive version failing:
+**Recording a fingerprint marks the spot exactly** (solid dot). No matching
+is involved — you are standing there — so there is nothing to be uncertain
+about and no corroboration to wait for. This is strictly the better marker,
+and it supersedes the inferred one whenever both exist.
+
+**Rooms from earlier sessions are placed by matching** (hollow dot, `~`
+prefix). Trail coordinates are relative to where the current session started,
+so a fingerprint recorded last time outlives its origin and can only be
+placed by recognising it again: whenever it matches, the dead-reckoned
+position is an observation of where that room is, and repeat sightings settle
+it onto the part of the floor that answers to it.
+
+That second path is the one exposed to noisy matching, and three things make
+it survive — all added after simulation showed the naive version failing:
 
 - **A distance gate, not just confidence.** `confidence` is the winner's
   share of the k-NN vote, so it measures unanimity, not proximity — k-NN
@@ -126,6 +134,11 @@ test rooms are placed on every run with no spurious labels, and mean error
 per room runs 0.1–3.1 m. That residual is mostly not error in the usual sense:
 a label marks where the room answered *along your path*, which is offset from
 the room's true centre whenever you walk past a room rather than through it.
+
+Saved rooms can be renamed or deleted individually from the fingerprint card.
+Renaming onto a name already in the list merges the two rooms, which is the
+natural way to reconcile one room recorded under two spellings; the markers
+merge with them.
 
 ### Loop closure: correcting drift on revisit
 

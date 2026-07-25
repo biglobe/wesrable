@@ -72,6 +72,8 @@ fun MainScreen(
                     savedRooms = state.savedRooms,
                     roomEstimate = state.roomEstimate,
                     onRecord = { label -> viewModel.recordFingerprint(label) },
+                    onRename = { old, new -> viewModel.renameFingerprint(old, new) },
+                    onDelete = { label -> viewModel.deleteFingerprint(label) },
                     onClear = { viewModel.clearFingerprints() },
                 )
             }

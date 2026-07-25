@@ -74,8 +74,10 @@ fun PositionCard(
                     "you're currently facing, and the blue dot stays centered as you walk, " +
                     "with the trail and start point (grey dot) moving around it. Drag to " +
                     "look around the rest of the trail; the ring shows where north is. " +
-                    "Purple labels are your recorded rooms, placed where they answered " +
-                    "to their fingerprint; green rings mark where a loop was closed.",
+                    "Purple marks your rooms — a solid dot is where you stood to record " +
+                    "one, a hollow dot with a ~ is a room from an earlier session placed " +
+                    "by matching, so only accurate to a few meters. Green rings mark " +
+                    "where a loop was closed.",
                 style = MaterialTheme.typography.bodySmall,
             )
             var panOffset by remember { mutableStateOf(Offset.Zero) }
@@ -164,16 +166,29 @@ fun PositionCard(
                     // obscure the current position.
                     roomAnchors.forEach { anchor ->
                         val point = project(anchor.xMeters, anchor.yMeters)
-                        drawCircle(Color(0xFF8E24AA), radius = 4f, center = point)
+                        if (anchor.isExact) {
+                            // Recorded here: the position is simply known.
+                            drawCircle(Color(0xFF8E24AA), radius = 5f, center = point)
+                        } else {
+                            // Inferred from where the room later matched, so
+                            // only good to a few meters — drawn hollow to say so.
+                            drawCircle(
+                                Color(0xFF8E24AA),
+                                radius = 5f,
+                                center = point,
+                                style = Stroke(width = 2f),
+                            )
+                        }
                         drawContext.canvas.nativeCanvas.drawText(
-                            anchor.label,
+                            if (anchor.isExact) anchor.label else "~${anchor.label}",
                             point.x,
-                            point.y - 8f,
+                            point.y - 9f,
                             AndroidPaint().apply {
                                 color = android.graphics.Color.parseColor("#8E24AA")
                                 textSize = 24f
                                 textAlign = AndroidPaint.Align.CENTER
                                 isAntiAlias = true
+                                alpha = if (anchor.isExact) 255 else 160
                             },
                         )
                     }

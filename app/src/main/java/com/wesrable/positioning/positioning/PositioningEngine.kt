@@ -44,6 +44,25 @@ class PositioningEngine(
     val roomAnchors: List<RoomAnchor> get() = roomAnchorMap.anchors
 
     /**
+     * Marks the exact spot a fingerprint was just recorded at. This beats
+     * anything [noteRoomMatch] can infer, since the position is simply known
+     * rather than derived from a noisy signal match.
+     */
+    fun markRecordedRoom(label: String) {
+        val position = deadReckoning.currentPosition()
+        roomAnchorMap.markRecorded(
+            label = label,
+            xMeters = position.xMeters,
+            yMeters = position.yMeters,
+            pathLengthMeters = deadReckoning.pathLengthMeters,
+        )
+    }
+
+    fun forgetRoom(label: String) = roomAnchorMap.forget(label)
+
+    fun renameRoom(oldLabel: String, newLabel: String) = roomAnchorMap.rename(oldLabel, newLabel)
+
+    /**
      * Offers the current room match so the label can be pinned to the map at
      * wherever the walker was standing when it matched.
      */
