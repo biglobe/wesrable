@@ -149,18 +149,30 @@ genuinely biases the raw heading itself, which no display transform can fix.
 
 ## Building
 
-Requires Android Studio (or the Android SDK + `compileSdk 34`) — this repo's
-Gradle wrapper is included, but this development sandbox's network policy
-blocks `dl.google.com`, so the Android Gradle Plugin and `androidx`/`google()`
-artifacts could not be fetched or compiled here. The plain-Kotlin `model` and
-`positioning` packages (no Android dependencies) were compiled standalone as
-a sanity check and build cleanly; the Android-specific sensor/scan/UI code
-was reviewed by hand against the platform APIs but not compiled in this
-environment. Open the project in Android Studio and let it sync to build.
+Requires Android Studio (or the Android SDK + `compileSdk 34`) locally:
 
 ```
 ./gradlew assembleDebug
 ```
+
+CI (`.github/workflows/build.yml`) builds the debug APK on every push and
+commits it to `dist/device-positioning-debug.apk` on the same branch
+(`[skip ci]`-tagged, so that commit doesn't re-trigger the workflow) —
+`dl.google.com` is reachable there even though it's blocked in some
+sandboxed dev environments, where the Android Gradle Plugin and
+`androidx`/`google()` artifacts can't be fetched.
+
+**Debug signing is pinned to a committed keystore** (`debug.keystore` at the
+repo root, referenced from `app/build.gradle.kts`'s `signingConfigs.debug`).
+Without this, Android's default debug signing config auto-generates a fresh
+*random* key at `~/.android/debug.keystore` whenever that file doesn't
+already exist — true on every CI run, since each starts on a clean machine.
+Android refuses to install an APK as an update over one signed by a
+different key, so every CI-built APK required uninstalling the previous one
+first. The pinned keystore's password/alias are the well-known Android
+debug-key defaults (`android` / `androiddebugkey`) — not a secret, since
+debug signing was never meant to be tamper-proof, only convenient. With it,
+every future CI build shares one signature and installs as a normal update.
 
 ---
 

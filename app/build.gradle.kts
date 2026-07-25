@@ -16,6 +16,24 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        // Pinned so every CI build shares one signature. Without this, the
+        // default debug config auto-generates a fresh, random signing key
+        // whenever ~/.android/debug.keystore doesn't already exist — true on
+        // every CI run, since each one starts on a clean machine. Android
+        // refuses to install an APK as an *update* over one signed by a
+        // different key, so every build required an uninstall first. This
+        // keystore's password/alias are the well-known Android debug
+        // defaults ("android" / "androiddebugkey") — not a secret, since
+        // debug builds were never meant to be tamper-proof, only convenient.
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
