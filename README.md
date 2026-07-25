@@ -129,17 +129,22 @@ methods below.
 **The position map is heading-up, not north-up.** `DeadReckoningTracker`
 accumulates true (east, north) displacement from the compass heading at each
 step — that part is a straightforward, correct compass-to-Cartesian
-conversion. But `PositionCard` renders it *heading-up*: "▲ forward" on the
-map always means "the direction you're currently facing," not north (the
-same convention a phone nav app's walking mode uses), by projecting the
+conversion. But `PositionCard` renders it *heading-up*: the top of the map
+always means "the direction you're currently facing," not north (the same
+convention a phone nav app's walking mode uses), by projecting the
 accumulated displacement onto (forward, right) relative to the live compass
 reading at render time. Without this, a fixed north-up map only shows
 forward motion as moving up the screen if you happen to be walking due
 north — walking any other direction (say, south) would correctly move the
 dot down, which reads as "backward" even though the underlying math was
-right. If the dot's motion still doesn't track your own steps after this,
-suspect device-attitude/carry-angle mismatch instead (phone held tilted or
-flat rather than upright with its top aimed the way you're walking) — that
+right. A small ring (`NorthCompassRing`) next to the map shows where true
+north currently is relative to that heading-up frame — its top tick is
+always "forward" (same convention as the map), and the "N" marker orbits it
+as you turn, using the identity that a unit vector at absolute bearing θ
+projects to screen angle (θ − heading) from "up" in a heading-up frame. If
+the dot's motion still doesn't track your own steps after all this, suspect
+device-attitude/carry-angle mismatch instead (phone held tilted or flat
+rather than upright with its top aimed the way you're walking) — that
 genuinely biases the raw heading itself, which no display transform can fix.
 
 ## Building
