@@ -2,6 +2,7 @@ package com.wesrable.positioning.ui.components
 
 import android.graphics.Paint as AndroidPaint
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,8 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -19,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
@@ -45,58 +52,67 @@ fun PositionCard(
             )
             Text("Steps: $stepCount")
             Text(
-                "Heading-up map — the top of the map always means the direction you're " +
-                    "currently facing, so forward motion always renders as moving up from " +
-                    "the origin. The trail behind the dot is everywhere you've walked; the " +
-                    "ring shows where north currently is relative to that.",
+                "Heading-up map, centered on you — the top always means the direction " +
+                    "you're currently facing, and the blue dot stays centered as you walk, " +
+                    "with the trail and start point (grey dot) moving around it. Drag to " +
+                    "look around the rest of the trail; the ring shows where north is.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            var panOffset by remember { mutableStateOf(Offset.Zero) }
             Box(Modifier.padding(top = 8.dp)) {
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp)
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                panOffset += dragAmount
+                            }
+                        }
                 ) {
-                    val centerX = size.width / 2
-                    val centerY = size.height / 2
+                    // Everything is drawn relative to the *current position*,
+                    // not the start point — the camera follows the user, with
+                    // panOffset (from dragging) as a manual override so they
+                    // can look around the rest of the trail. Origin at
+                    // panOffset == (centerX, centerY): where the live dot sits.
+                    val originX = size.width / 2 + panOffset.x
+                    val originY = size.height / 2 + panOffset.y
 
-                    // Reference grid, one line per meter (screen-fixed; the
-                    // map rotates with heading, this grid doesn't represent N/S/E/W).
+                    // Reference grid, one line per meter.
                     var gx = 0f
                     while (gx < size.width) {
-                        drawLine(Color(0xFFE0E0E0), Offset(centerX + gx, 0f), Offset(centerX + gx, size.height))
-                        drawLine(Color(0xFFE0E0E0), Offset(centerX - gx, 0f), Offset(centerX - gx, size.height))
+                        drawLine(Color(0xFFE0E0E0), Offset(originX + gx, 0f), Offset(originX + gx, size.height))
+                        drawLine(Color(0xFFE0E0E0), Offset(originX - gx, 0f), Offset(originX - gx, size.height))
                         gx += PIXELS_PER_METER
                     }
                     var gy = 0f
                     while (gy < size.height) {
-                        drawLine(Color(0xFFE0E0E0), Offset(0f, centerY + gy), Offset(size.width, centerY + gy))
-                        drawLine(Color(0xFFE0E0E0), Offset(0f, centerY - gy), Offset(size.width, centerY - gy))
+                        drawLine(Color(0xFFE0E0E0), Offset(0f, originY + gy), Offset(size.width, originY + gy))
+                        drawLine(Color(0xFFE0E0E0), Offset(0f, originY - gy), Offset(size.width, originY - gy))
                         gy += PIXELS_PER_METER
                     }
 
-                    // Origin (start point).
-                    drawCircle(Color(0xFF9E9E9E), radius = 5f, center = Offset(centerX, centerY))
-
-                    // Rotate every (east, north) point — the trail and the
-                    // current position alike — into (right, forward) relative
-                    // to the *current* heading, so "up" on screen always means
-                    // "the way you're facing right now" — a heading-up map,
-                    // like a phone nav app's walking mode, rather than a fixed
-                    // north-up one where "forward" only points up if you happen
-                    // to be walking due north. The whole trail is re-projected
-                    // every frame, so it visibly swings around as you turn,
-                    // exactly like the live position dot does.
+                    // Rotate every (east, north) point — relative to the
+                    // *current position*, not the start point — into (right,
+                    // forward) relative to the *current* heading, so "up" on
+                    // screen always means "the way you're facing right now"
+                    // — a heading-up map, like a phone nav app's walking
+                    // mode. The whole trail is re-projected every frame, so
+                    // it swings around consistently as you turn, and shifts
+                    // as you walk so the dot stays put at the camera center.
                     val headingRad = Math.toRadians(headingDeg.toDouble())
                     val sinH = sin(headingRad)
                     val cosH = cos(headingRad)
 
                     fun project(east: Double, north: Double): Offset {
-                        val forward = east * sinH + north * cosH
-                        val right = east * cosH - north * sinH
+                        val relEast = east - position.xMeters
+                        val relNorth = north - position.yMeters
+                        val forward = relEast * sinH + relNorth * cosH
+                        val right = relEast * cosH - relNorth * sinH
                         return Offset(
-                            centerX + (right * PIXELS_PER_METER).toFloat(),
-                            centerY - (forward * PIXELS_PER_METER).toFloat(),
+                            originX + (right * PIXELS_PER_METER).toFloat(),
+                            originY - (forward * PIXELS_PER_METER).toFloat(),
                         )
                     }
 
@@ -109,6 +125,9 @@ fun PositionCard(
                         drawPath(path, color = Color(0xFF90A4CC), style = Stroke(width = 4f))
                     }
 
+                    // Start point.
+                    drawCircle(Color(0xFF9E9E9E), radius = 5f, center = project(0.0, 0.0))
+
                     val currentPoint = project(position.xMeters, position.yMeters)
                     val confidencePx = (position.confidenceRadiusMeters * PIXELS_PER_METER).toFloat()
                     drawCircle(Color(0x333D7FD9), radius = confidencePx.coerceAtLeast(4f), center = currentPoint)
@@ -120,6 +139,16 @@ fun PositionCard(
                         .align(Alignment.TopEnd)
                         .padding(4.dp),
                 )
+                if (panOffset != Offset.Zero) {
+                    OutlinedButton(
+                        onClick = { panOffset = Offset.Zero },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp),
+                    ) {
+                        Text("Recenter")
+                    }
+                }
             }
         }
     }

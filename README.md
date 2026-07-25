@@ -142,8 +142,18 @@ right. A small ring (`NorthCompassRing`) next to the map shows where true
 north currently is relative to that heading-up frame — its top tick is
 always "forward" (same convention as the map), and the "N" marker orbits it
 as you turn, using the identity that a unit vector at absolute bearing θ
-projects to screen angle (θ − heading) from "up" in a heading-up frame. If
-the dot's motion still doesn't track your own steps after all this, suspect
+projects to screen angle (θ − heading) from "up" in a heading-up frame.
+
+**The camera follows the current position, not the start point.** Every
+point drawn — grid, trail, start marker — is projected relative to *where
+you are now*, so the live position dot stays fixed at the view's center as
+you walk, with everything else (including the start point) sliding around
+it. A drag gesture on the map adds a manual `panOffset` on top of that
+camera-follow behavior, letting you look at other parts of the trail; a
+"Recenter" button appears whenever `panOffset != Offset.Zero` to snap back
+to auto-follow.
+
+If the dot's motion still doesn't track your own steps after all this, suspect
 device-attitude/carry-angle mismatch instead (phone held tilted or flat
 rather than upright with its top aimed the way you're walking) — that
 genuinely biases the raw heading itself, which no display transform can fix.
