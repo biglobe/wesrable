@@ -15,7 +15,7 @@ connects to a Bluetooth device, and requests no `INTERNET` permission at all.
 | BLE landmarks | `BluetoothLeScanner` observer scan | No `connectGatt()` — decodes iBeacon and Eddystone payloads directly from the advertisement bytes |
 | Range to each landmark | Log-distance path-loss model | Converts RSSI → estimated meters; noisy but connection-free |
 | 2D position (with calibrated anchors) | Least-squares multilateration | Needs ≥3 landmarks with known coordinates (see Calibration below) |
-| 2D position (always-on fallback) | Pedestrian dead reckoning | Self-controlled step detection (peak detection on `TYPE_LINEAR_ACCELERATION`, or raw `TYPE_ACCELEROMETER` as a fallback) × heading, integrated from a start point, with the full walked path retained and drawn as a trail. Zero radios required. |
+| 2D position (always-on fallback) | Pedestrian dead reckoning | Self-controlled step detection — acceleration projected onto gravity, then cadence-confirmed (see below) — × heading, integrated from a start point, with the full walked path retained and drawn as a trail. Zero radios required. |
 | Floor / relative altitude | `TYPE_PRESSURE` barometer | ~3 m per floor heuristic, relative to session start |
 | Room identification | WiFi/BLE RSSI + magnetic-field fingerprint matching | Weighted k-NN against a map you record once by walking each room; no coordinates needed (see below) |
 
@@ -79,6 +79,47 @@ snaps its estimate back onto a persistent map; this app has no equivalent —
 every match is independent, there's no map-building or drift correction
 beyond what's already recorded.
 
+### Telling walking apart from fidgeting
+
+The dead-reckoning trail only advances on a detected footstep, so a step
+detector that fires on idle hand movement doesn't just inflate a counter — it
+draws phantom corridors through the map. `StepDetector` uses two properties
+of walking that shaking a phone doesn't share:
+
+**Gait is vertical.** Walking bounces your center of mass up and down against
+gravity; idle hand movement is mostly lateral and rotational. Every sample is
+projected onto the gravity vector (from `TYPE_GRAVITY`, or a low-pass
+estimate off the raw accelerometer) and only that vertical component drives
+detection. The obvious alternative — thresholding the magnitude of the 3-axis
+vector — is direction-blind, and rectifies a shake along *any* axis into an
+apparent step.
+
+**Gait is rhythmic and sustained.** A peak becomes a *candidate*, not a step.
+Candidates are only committed once four arrive in a row at a steady,
+plausible walking cadence (400 ms–1 s apart, within 20% of each other), and
+the cadence keeps being enforced for the rest of the walk, so one lucky
+confirmation can't open the floodgates. Confirmation is **retroactive** — the
+whole run is emitted at once — so the check costs no steps, only a brief
+delay at the start of a walk. The trade is that a walk shorter than four
+steps never registers.
+
+Two details matter more than they look. The stride floor is 400 ms rather
+than 300 ms because at 300 ms a 3 Hz shake sits *inside* the plausible band
+and reads as perfectly steady fast walking. And a peak rejected for arriving
+too soon still updates the "last candidate" timestamp — without that, a fast
+rhythmic shake has every other peak rejected and the survivors land a
+plausible stride apart, frequency-dividing a 4 Hz fidget into convincing 2 Hz
+"gait". Both were found by simulating synthetic traces against the analyzer.
+
+Because `GaitAnalyzer` is deliberately free of Android dependencies, it can
+be exercised on the JVM with synthetic acceleration traces — sinusoidal gait
+at various cadences and amplitudes, gait with realistic stride-to-stride
+jitter, and irregular shaking — which is how the thresholds above were
+chosen. Note that this over-states the fidgeting problem: a synthetic trace
+feeds the analyzer a purely vertical signal, whereas real fidgeting is mostly
+lateral and is largely removed by the projection before the analyzer ever
+sees it.
+
 ## Project layout
 
 ```
@@ -107,12 +148,12 @@ app/src/main/java/com/wesrable/positioning/
 - `ACCESS_WIFI_STATE` / `CHANGE_WIFI_STATE` — read scan results / request a
   scan.
 - **No `ACTIVITY_RECOGNITION` needed.** Step detection is done with our own
-  peak-detection algorithm over `TYPE_LINEAR_ACCELERATION`/
-  `TYPE_ACCELEROMETER` rather than the OS's hardware `TYPE_STEP_DETECTOR`,
-  which requires that permission. This also sidesteps `TYPE_STEP_DETECTOR`'s
-  OEM-variable firmware behavior — some devices need several warm-up steps
-  before they start reporting, and some drop out unpredictably — which made
-  the step counter feel unresponsive.
+  algorithm over `TYPE_LINEAR_ACCELERATION` + `TYPE_GRAVITY` (falling back to
+  raw `TYPE_ACCELEROMETER`) rather than the OS's hardware
+  `TYPE_STEP_DETECTOR`, which requires that permission. This also sidesteps
+  `TYPE_STEP_DETECTOR`'s OEM-variable firmware behavior — some devices need
+  several warm-up steps before they start reporting, and some drop out
+  unpredictably — which made the step counter feel unresponsive.
 - **No `INTERNET`, no `ACCESS_NETWORK_STATE`.** The app cannot phone home
   even if it wanted to.
 - `BLUETOOTH_CONNECT` is intentionally **not** requested — the BLE scanner
