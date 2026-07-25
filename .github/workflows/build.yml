@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,3 +30,17 @@ jobs:
         with:
           name: device-positioning-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Commit built APK back to the branch
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk dist/device-positioning-debug.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dist/device-positioning-debug.apk
+          if git diff --cached --quiet; then
+            echo "APK unchanged, nothing to commit"
+          else
+            git commit -m "Add built debug APK [skip ci]"
+            git push
+          fi
