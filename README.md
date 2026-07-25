@@ -142,11 +142,15 @@ merge with them.
 
 ### Reading the map
 
-The position box is heading-up by default: the top is the direction you're
-facing, the blue dot stays put in the middle, and the trail swings around it
-as you turn. It takes the usual map gestures — drag to pan, pinch to zoom
-(0.2×–8×), twist with two fingers to turn. **Reset view** restores all three
-at once.
+The position box is portrait (3:4) and sized off the screen width rather than
+to a fixed height, so it fills whatever device it lands on. That shape suits
+the heading-up view: what you're walking towards is ahead of you on screen,
+and that's the direction worth seeing furthest in.
+
+It is heading-up by default — the top is the direction you're facing, the
+blue dot stays put in the middle, and the trail swings around it as you turn.
+It takes the usual map gestures: drag to pan, pinch to zoom (0.2×–8×), twist
+with two fingers to turn. **Reset view** restores all three at once.
 
 Twisting subtracts from the heading used to project the map, which is what
 lets it hold any orientation rather than only heading-up. Twisting until the

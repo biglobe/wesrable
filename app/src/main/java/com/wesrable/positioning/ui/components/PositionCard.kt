@@ -5,8 +5,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
@@ -36,6 +36,13 @@ import kotlin.math.sin
 
 private const val PIXELS_PER_METER = 24f
 private const val COMPASS_RING_DP = 48
+
+/**
+ * Width as a fraction of height, so the map box comes out portrait — 3:4,
+ * which on a typical phone is roughly a third taller than the old fixed
+ * 220 dp and gives the trail somewhere to go.
+ */
+private const val MAP_WIDTH_TO_HEIGHT = 3f / 4f
 private const val MIN_ZOOM = 0.2f
 private const val MAX_ZOOM = 8f
 
@@ -124,7 +131,13 @@ fun PositionCard(
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
+                        // Taller than it is wide, and sized off the screen
+                        // width rather than a fixed height so it fills
+                        // whatever device it lands on. Portrait suits the
+                        // heading-up view: what you're walking towards is
+                        // ahead of you on screen, and that is the direction
+                        // worth being able to see furthest in.
+                        .aspectRatio(MAP_WIDTH_TO_HEIGHT)
                         .pointerInput(Unit) {
                             detectTransformGestures { _, pan, gestureZoom, gestureRotation ->
                                 val newZoom = (zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
