@@ -32,16 +32,6 @@ class WifiScanner(private val context: Context) {
     val isAvailable: Boolean get() = wifiManager.isWifiEnabled || wifiManager.scanResults != null
 
     fun scans(periodMillis: Long = 15_000L): Flow<List<WifiSignal>> = callbackFlow {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                val success = intent.getBooleanExtra(
-                    WifiManager.EXTRA_RESULTS_UPDATED, true
-                )
-                if (!success) return
-                emitCurrentResults()
-            }
-        }
-
         fun emitCurrentResults() {
             @Suppress("MissingPermission")
             val results = try {
@@ -64,6 +54,16 @@ class WifiScanner(private val context: Context) {
                 )
             }
             trySend(signals)
+        }
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                val success = intent.getBooleanExtra(
+                    WifiManager.EXTRA_RESULTS_UPDATED, true
+                )
+                if (!success) return
+                emitCurrentResults()
+            }
         }
 
         ContextCompat.registerReceiver(
