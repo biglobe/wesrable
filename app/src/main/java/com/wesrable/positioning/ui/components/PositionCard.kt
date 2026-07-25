@@ -3,10 +3,10 @@ package com.wesrable.positioning.ui.components
 import android.graphics.Paint as AndroidPaint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
@@ -43,6 +44,14 @@ private const val COMPASS_RING_DP = 48
  * 220 dp and gives the trail somewhere to go.
  */
 private const val MAP_WIDTH_TO_HEIGHT = 3f / 4f
+
+/**
+ * Ceiling on the map's height, as a fraction of the screen. The 3:4 shape
+ * stays under this on a phone, so the cap only bites on displays wide enough
+ * that keeping the ratio would otherwise push everything below the map off
+ * the screen.
+ */
+private const val MAP_MAX_SCREEN_HEIGHT_FRACTION = 0.9f
 private const val MIN_ZOOM = 0.2f
 private const val MAX_ZOOM = 8f
 
@@ -127,17 +136,27 @@ fun PositionCard(
             // means the top is the way they're facing, as before.
             var manualRotationDeg by remember { mutableStateOf(0f) }
 
-            Box(Modifier.padding(top = 8.dp)) {
+            val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+            BoxWithConstraints(Modifier.padding(top = 8.dp)) {
+                // Portrait, derived from the width actually available rather
+                // than a fixed height, so it fills whatever device it lands
+                // on — but never more than [MAP_MAX_SCREEN_HEIGHT_FRACTION]
+                // of the screen, so it can't grow to where the cards below it
+                // are pushed out of sight.
+                //
+                // Computed here rather than with `aspectRatio` plus a
+                // `heightIn` cap: `fillMaxWidth` fixes the width, so
+                // `aspectRatio` cannot find a size that satisfies a reduced
+                // maxHeight and quietly falls through to leaving the height
+                // unconstrained instead of capping it.
+                val mapHeight = minOf(
+                    maxWidth / MAP_WIDTH_TO_HEIGHT,
+                    screenHeight * MAP_MAX_SCREEN_HEIGHT_FRACTION,
+                )
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // Taller than it is wide, and sized off the screen
-                        // width rather than a fixed height so it fills
-                        // whatever device it lands on. Portrait suits the
-                        // heading-up view: what you're walking towards is
-                        // ahead of you on screen, and that is the direction
-                        // worth being able to see furthest in.
-                        .aspectRatio(MAP_WIDTH_TO_HEIGHT)
+                        .height(mapHeight)
                         .pointerInput(Unit) {
                             detectTransformGestures { _, pan, gestureZoom, gestureRotation ->
                                 val newZoom = (zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)

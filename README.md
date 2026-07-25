@@ -142,10 +142,18 @@ merge with them.
 
 ### Reading the map
 
-The position box is portrait (3:4) and sized off the screen width rather than
-to a fixed height, so it fills whatever device it lands on. That shape suits
-the heading-up view: what you're walking towards is ahead of you on screen,
-and that's the direction worth seeing furthest in.
+The position box is portrait (3:4) and sized off the width actually available
+rather than to a fixed height, so it fills whatever device it lands on —
+capped at 90% of the screen height so it can never grow to where the cards
+below it are pushed out of sight. That shape suits the heading-up view: what
+you're walking towards is ahead of you on screen, and that's the direction
+worth seeing furthest in.
+
+(The height is computed directly rather than by combining `aspectRatio` with
+a `heightIn` cap. `fillMaxWidth` fixes the width, so `aspectRatio` can find no
+size that satisfies a reduced `maxHeight`, and falls through to leaving the
+height unconstrained rather than capping it — the cap would silently do
+nothing.)
 
 It is heading-up by default — the top is the direction you're facing, the
 blue dot stays put in the middle, and the trail swings around it as you turn.
