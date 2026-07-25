@@ -68,10 +68,38 @@ data class Fingerprint(
     val recordedAtMillis: Long,
 )
 
-/** Result of matching a live signal snapshot against the stored fingerprint map. */
+/**
+ * Result of matching a live signal snapshot against the stored fingerprint map.
+ *
+ * [confidence] is the winning room's share of the k-nearest vote, so it says
+ * how *unanimous* the match was, not how *close* it was — k-NN always returns
+ * its nearest neighbour, and standing somewhere never recorded still elects a
+ * winner, sometimes unanimously. [nearestDistanceDb] is the raw signal
+ * distance to the closest stored sample, which is what actually says whether
+ * the walker is anywhere near a mapped room at all.
+ */
 data class RoomEstimate(
     val label: String?,
     val confidence: Double,
+    val nearestDistanceDb: Double = Double.MAX_VALUE,
+)
+
+/**
+ * A labeled room pinned to trail coordinates. Rooms are recorded without any
+ * coordinates — matching is pure pattern comparison — but the moment one
+ * matches while walking, the dead-reckoned position supplies a location for
+ * it, and averaging over repeat sightings settles it onto the middle of
+ * wherever that room actually answers.
+ *
+ * Coordinates are relative to where the current session started, so these
+ * cannot be persisted between sessions the way the fingerprints themselves
+ * are; a new session starts a new origin and has to re-observe them.
+ */
+data class RoomAnchor(
+    val label: String,
+    val xMeters: Double,
+    val yMeters: Double,
+    val sightings: Int,
 )
 
 /**

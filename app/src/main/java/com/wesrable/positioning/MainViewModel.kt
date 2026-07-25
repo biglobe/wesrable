@@ -12,6 +12,7 @@ import com.wesrable.positioning.model.Fingerprint
 import com.wesrable.positioning.model.Orientation
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
+import com.wesrable.positioning.model.RoomAnchor
 import com.wesrable.positioning.model.RoomEstimate
 import com.wesrable.positioning.model.WifiSignal
 import com.wesrable.positioning.positioning.PositioningEngine
@@ -44,6 +45,7 @@ data class UiState(
     val lastClosureDriftMeters: Double? = null,
     val magneticMagnitudeUt: Float? = null,
     val roomEstimate: RoomEstimate = RoomEstimate(null, 0.0),
+    val roomAnchors: List<RoomAnchor> = emptyList(),
     val savedRooms: List<Pair<String, Int>> = emptyList(),
     val wifiAvailable: Boolean = false,
     val bleAvailable: Boolean = false,
@@ -215,6 +217,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             liveMagneticMagnitudeUt = latestMagneticMagnitudeUt,
             fingerprints = fingerprintStore.all,
         )
+        // Pins the matched room to wherever the walker is standing, so the
+        // labeled rooms can be drawn on the trail they were recorded along.
+        engine.noteRoomMatch(roomEstimate)
         _uiState.update {
             it.copy(
                 orientation = latestOrientation,
@@ -228,6 +233,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastClosureDriftMeters = engine.lastClosureDriftMeters,
                 magneticMagnitudeUt = latestMagneticMagnitudeUt,
                 roomEstimate = roomEstimate,
+                roomAnchors = engine.roomAnchors,
             )
         }
     }

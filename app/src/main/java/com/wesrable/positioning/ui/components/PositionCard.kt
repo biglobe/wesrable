@@ -29,6 +29,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
+import com.wesrable.positioning.model.RoomAnchor
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -44,6 +45,7 @@ fun PositionCard(
     closurePoints: List<Pair<Double, Double>>,
     closureCount: Int,
     lastClosureDriftMeters: Double?,
+    roomAnchors: List<RoomAnchor>,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -71,7 +73,9 @@ fun PositionCard(
                 "Heading-up map, centered on you — the top always means the direction " +
                     "you're currently facing, and the blue dot stays centered as you walk, " +
                     "with the trail and start point (grey dot) moving around it. Drag to " +
-                    "look around the rest of the trail; the ring shows where north is.",
+                    "look around the rest of the trail; the ring shows where north is. " +
+                    "Purple labels are your recorded rooms, placed where they answered " +
+                    "to their fingerprint; green rings mark where a loop was closed.",
                 style = MaterialTheme.typography.bodySmall,
             )
             var panOffset by remember { mutableStateOf(Offset.Zero) }
@@ -152,6 +156,25 @@ fun PositionCard(
                             radius = 6f,
                             center = project(east, north),
                             style = Stroke(width = 2f),
+                        )
+                    }
+
+                    // Labeled rooms, pinned wherever they answered to their
+                    // fingerprint. Drawn under the live dot so they never
+                    // obscure the current position.
+                    roomAnchors.forEach { anchor ->
+                        val point = project(anchor.xMeters, anchor.yMeters)
+                        drawCircle(Color(0xFF8E24AA), radius = 4f, center = point)
+                        drawContext.canvas.nativeCanvas.drawText(
+                            anchor.label,
+                            point.x,
+                            point.y - 8f,
+                            AndroidPaint().apply {
+                                color = android.graphics.Color.parseColor("#8E24AA")
+                                textSize = 24f
+                                textAlign = AndroidPaint.Align.CENTER
+                                isAntiAlias = true
+                            },
                         )
                     }
 

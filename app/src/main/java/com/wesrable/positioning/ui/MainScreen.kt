@@ -64,6 +64,7 @@ fun MainScreen(
                     closurePoints = state.closurePoints,
                     closureCount = state.closureCount,
                     lastClosureDriftMeters = state.lastClosureDriftMeters,
+                    roomAnchors = state.roomAnchors,
                 )
             }
             item {

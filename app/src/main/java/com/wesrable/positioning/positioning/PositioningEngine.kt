@@ -4,6 +4,8 @@ import com.wesrable.positioning.model.Anchor
 import com.wesrable.positioning.model.BleSignal
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
+import com.wesrable.positioning.model.RoomAnchor
+import com.wesrable.positioning.model.RoomEstimate
 import com.wesrable.positioning.model.WifiSignal
 
 /**
@@ -20,6 +22,7 @@ import com.wesrable.positioning.model.WifiSignal
 class PositioningEngine(
     private val deadReckoning: DeadReckoningTracker = DeadReckoningTracker(),
     private val loopClosure: LoopClosureTracker = LoopClosureTracker(),
+    private val roomAnchorMap: RoomAnchorMap = RoomAnchorMap(),
 ) {
 
     /** Total footsteps counted since the engine was created. */
@@ -36,6 +39,25 @@ class PositioningEngine(
 
     /** Where each loop was closed, for marking on the map. */
     val closurePoints: List<Pair<Double, Double>> get() = loopClosure.closurePoints
+
+    /** The user's labeled rooms, placed on the trail wherever they answered. */
+    val roomAnchors: List<RoomAnchor> get() = roomAnchorMap.anchors
+
+    /**
+     * Offers the current room match so the label can be pinned to the map at
+     * wherever the walker was standing when it matched.
+     */
+    fun noteRoomMatch(estimate: RoomEstimate) {
+        val position = deadReckoning.currentPosition()
+        roomAnchorMap.note(
+            label = estimate.label,
+            confidence = estimate.confidence,
+            nearestDistanceDb = estimate.nearestDistanceDb,
+            xMeters = position.xMeters,
+            yMeters = position.yMeters,
+            pathLengthMeters = deadReckoning.pathLengthMeters,
+        )
+    }
 
     fun onStep(stepLengthMeters: Float, headingDegrees: Float) {
         deadReckoning.onStep(stepLengthMeters, headingDegrees)
@@ -70,6 +92,12 @@ class PositioningEngine(
             driftNorth = closure.driftNorthMeters,
         )
         loopClosure.applyCorrection(
+            anchorPathLength = closure.anchorPathLengthMeters,
+            endPathLength = closure.currentPathLengthMeters,
+            driftEast = closure.driftEastMeters,
+            driftNorth = closure.driftNorthMeters,
+        )
+        roomAnchorMap.applyCorrection(
             anchorPathLength = closure.anchorPathLengthMeters,
             endPathLength = closure.currentPathLengthMeters,
             driftEast = closure.driftEastMeters,

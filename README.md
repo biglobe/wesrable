@@ -18,6 +18,8 @@ connects to a Bluetooth device, and requests no `INTERNET` permission at all.
 | 2D position (always-on fallback) | Pedestrian dead reckoning | Self-controlled step detection — acceleration projected onto gravity, then cadence-confirmed (see below) — × heading, integrated from a start point, with the full walked path retained and drawn as a trail. Zero radios required. |
 | Floor / relative altitude | `TYPE_PRESSURE` barometer | ~3 m per floor heuristic, relative to session start |
 | Room identification | WiFi/BLE RSSI + magnetic-field fingerprint matching | Weighted k-NN against a map you record once by walking each room; no coordinates needed (see below) |
+| Room labels on the trail map | Room matches + dead-reckoned position | Rooms are recorded without coordinates, then pinned to the map wherever they answer as you walk past (see below) |
+| Drift correction on revisit | Automatic trail fingerprinting (loop closure) | Recognises somewhere already visited and removes the drift accumulated in between; needs a circuit of 60 m+ (see below) |
 
 RF-based and dead-reckoning position estimates are fused with a simple
 inverse-variance weighted blend (`PositioningEngine.fuse`), so the app keeps
@@ -82,6 +84,48 @@ every match is independent, and room matching itself builds no map.
 automatically fingerprinting the trail itself — see Loop closure below. It
 narrows the gap versus real SLAM rather than closing it: the RF constraint is
 worth a few meters, where a LIDAR's is worth centimeters.)
+
+### Putting the labeled rooms on the map
+
+Room fingerprints deliberately carry no coordinates — that's what lets you
+record one by standing somewhere and typing a name. It also leaves them
+unplaceable on the trail map. `RoomAnchorMap` closes that gap
+opportunistically: whenever a room matches while you're walking, the
+dead-reckoned position of that moment is an observation of where the room is,
+and repeat sightings settle it onto the part of the floor that answers to
+that fingerprint. Labels are then drawn on the position map, and are
+rubber-sheeted along with the trail whenever a loop closes so they don't
+slide out of alignment with it.
+
+Three things make this survive contact with noisy matching, all of them added
+after simulation showed the naive version failing:
+
+- **A distance gate, not just confidence.** `confidence` is the winner's
+  share of the k-NN vote, so it measures unanimity, not proximity — k-NN
+  always returns *something*, and standing somewhere never recorded still
+  elects a winner, often unanimously. `RoomEstimate` now also carries the raw
+  distance to the nearest stored sample, which is what actually says whether
+  you're near a mapped room at all. (This is why `FingerprintMatcher` now
+  averages its signal terms instead of summing them: a sum is fine for
+  ranking, but its scale shifts with how many signal types happen to be
+  available, so no fixed number means anything absolute.)
+- **Corroboration before display.** A label isn't drawn until the room has
+  been seen three times. Isolated wrong matches are routine — measured at a
+  spot 17 m from any recorded room, the nearest sample still scored inside
+  the gate.
+- **Median, and a spread limit.** Position is the per-axis median rather than
+  the mean, so an outlier is ignored rather than dragging the label in
+  proportion to how wrong it was. And once a room is placed, sightings
+  reported more than 8 m away are disbelieved. Without that last rule a walk
+  through unmapped space generated enough wrong-but-plausible matches to
+  outvote the real ones: in simulation a bedroom label was pulled 9.3 m off
+  the room. With it, the same walk places it 0.3 m off.
+
+Across simulated walks that include a detour through unmapped space, all four
+test rooms are placed on every run with no spurious labels, and mean error
+per room runs 0.1–3.1 m. That residual is mostly not error in the usual sense:
+a label marks where the room answered *along your path*, which is offset from
+the room's true centre whenever you walk past a room rather than through it.
 
 ### Loop closure: correcting drift on revisit
 
@@ -184,7 +228,7 @@ app/src/main/java/com/wesrable/positioning/
                      Fingerprint, RoomEstimate...
   sensors/          OrientationSensor, BarometerSensor, MagnetometerSensor, StepDetector
   scan/             WifiScanner, BleScanner, BleAdvertisementParser
-  positioning/       RssiDistance, Trilateration, DeadReckoningTracker,
+  positioning/       RssiDistance, Trilateration, DeadReckoningTracker, RoomAnchorMap,
                      LoopClosureTracker, PositioningEngine
   fingerprint/      FingerprintStore, FingerprintMatcher
   ui/               Jetpack Compose screens

@@ -19,6 +19,7 @@ object FingerprintMatcher {
 
     private const val K_NEIGHBORS = 3
     private const val MISSING_SIGNAL_PENALTY_DB = 15.0
+    private const val RSSI_WEIGHT = 1.0
     private const val MAGNETIC_WEIGHT = 0.3
 
     fun estimate(
@@ -49,34 +50,54 @@ object FingerprintMatcher {
         val totalWeight = votes.values.sum()
         val confidence = if (totalWeight > 0) bestWeight / totalWeight else 0.0
 
-        return RoomEstimate(bestLabel, confidence)
+        return RoomEstimate(bestLabel, confidence, nearest.first().second)
     }
 
+    /**
+     * Weighted mean over whichever comparisons can actually be made, rather
+     * than their sum. Summing works for ranking — every candidate is compared
+     * against the same live snapshot — but leaves the result on a scale that
+     * silently changes with how many signal types happen to be available, so
+     * no fixed number means anything absolute. Averaging keeps the figure
+     * comparable, which is what lets [RoomEstimate.nearestDistanceDb] be
+     * tested against a threshold to decide whether the walker is near any
+     * mapped room at all.
+     */
     private fun distance(
         liveWifi: Map<String, Int>,
         liveBle: Map<String, Int>,
         liveMagnetic: Float?,
         fingerprint: Fingerprint,
     ): Double {
-        val wifiDist = rssiMapDistance(liveWifi, fingerprint.wifiRssi)
-        val bleDist = rssiMapDistance(liveBle, fingerprint.bleRssi)
-        val magDist = if (liveMagnetic != null) {
-            MAGNETIC_WEIGHT * abs(liveMagnetic - fingerprint.magneticMagnitudeUt)
-        } else {
-            0.0
+        var weighted = 0.0
+        var totalWeight = 0.0
+
+        rssiMapDistance(liveWifi, fingerprint.wifiRssi)?.let {
+            weighted += RSSI_WEIGHT * it
+            totalWeight += RSSI_WEIGHT
         }
-        return wifiDist + bleDist + magDist
+        rssiMapDistance(liveBle, fingerprint.bleRssi)?.let {
+            weighted += RSSI_WEIGHT * it
+            totalWeight += RSSI_WEIGHT
+        }
+        if (liveMagnetic != null) {
+            weighted += MAGNETIC_WEIGHT * abs(liveMagnetic - fingerprint.magneticMagnitudeUt)
+            totalWeight += MAGNETIC_WEIGHT
+        }
+
+        return if (totalWeight == 0.0) Double.MAX_VALUE else weighted / totalWeight
     }
 
     /**
-     * RMS RSSI difference over the union of keys seen in either map. A key
+     * RMS RSSI difference over the union of keys seen in either map, or null
+     * when neither side saw anything and there is nothing to compare. A key
      * present on only one side is treated as if it differed by
      * [MISSING_SIGNAL_PENALTY_DB] dB, since a landmark that vanished or
      * appeared is itself strong evidence of a different location.
      */
-    private fun rssiMapDistance(live: Map<String, Int>, stored: Map<String, Int>): Double {
+    private fun rssiMapDistance(live: Map<String, Int>, stored: Map<String, Int>): Double? {
         val keys = live.keys + stored.keys
-        if (keys.isEmpty()) return 0.0
+        if (keys.isEmpty()) return null
         val sumSquares = keys.sumOf { key ->
             val liveVal = live[key]
             val storedVal = stored[key]
