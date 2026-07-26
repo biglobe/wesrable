@@ -56,6 +56,31 @@ class RttRanger(private val context: Context) {
     /** Whether this phone can do RTT ranging at all. */
     val isSupportedByDevice: Boolean get() = rttManager != null
 
+    /**
+     * Whether this phone has an ultra-wideband radio.
+     *
+     * UWB is the only radio technology that ranges to 10-30 cm rather than
+     * metres, which is the difference between knowing the room and knowing
+     * the cabinet. It needs a UWB tag or anchor at the other end, so it is
+     * not passive — but it is the one RF answer to sub-metre indoors, and
+     * whether the phone can do it at all decides if that door is even open.
+     */
+    val isUwbSupportedByDevice: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            context.packageManager.hasSystemFeature("android.hardware.uwb")
+
+    /**
+     * Total access points visible, whether or not they answer ranging.
+     *
+     * Reported alongside the responder count so that "none of the twelve
+     * routers here support it" can be told apart from "the scan returned
+     * nothing at all" — the card would otherwise show the same message for a
+     * building without the feature and for a permissions or throttling
+     * failure on our side.
+     */
+    fun accessPointsInRange(): Int =
+        runCatching { wifiManager?.scanResults?.size }.getOrNull() ?: 0
+
     /** Whether it is switched on right now (the user can disable it system-wide). */
     val isAvailable: Boolean
         @RequiresApi(Build.VERSION_CODES.P)

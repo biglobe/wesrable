@@ -71,6 +71,8 @@ data class UiState(
     val rttMeasurements: List<RttMeasurement> = emptyList(),
     val rttSupportedByDevice: Boolean = false,
     val rttRespondersInRange: Int = 0,
+    val rttAccessPointsInRange: Int = 0,
+    val uwbSupportedByDevice: Boolean = false,
     val isSensing: Boolean = false,
 )
 
@@ -119,6 +121,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             barometerAvailable = barometerSensor.isAvailable,
             magnetometerAvailable = magnetometerSensor.isAvailable,
             rttSupportedByDevice = rttRanger.isSupportedByDevice,
+            uwbSupportedByDevice = rttRanger.isUwbSupportedByDevice,
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -198,6 +201,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             rttMeasurements = measurements.sortedBy { m -> m.distanceMeters },
                             rttRespondersInRange = rttRanger.respondersInRange().size,
+                            rttAccessPointsInRange = rttRanger.accessPointsInRange(),
                         )
                     }
                 }

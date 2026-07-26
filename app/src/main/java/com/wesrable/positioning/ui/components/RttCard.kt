@@ -21,6 +21,8 @@ fun RttCard(
     measurements: List<RttMeasurement>,
     supportedByDevice: Boolean,
     respondersInRange: Int,
+    accessPointsInRange: Int,
+    uwbSupportedByDevice: Boolean,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -41,9 +43,16 @@ fun RttCard(
                 )
 
                 respondersInRange == 0 -> Text(
-                    "Phone supports RTT, but no access point in range answers ranging " +
-                        "requests. Most routers made before ~2019 don't; Google/Nest WiFi " +
-                        "and many mesh systems do.",
+                    if (accessPointsInRange == 0) {
+                        "Phone supports RTT, but no access points are visible at all — " +
+                            "so this is a scan problem here, not a verdict on the building."
+                    } else {
+                        "Phone supports RTT, but 0 of $accessPointsInRange visible access " +
+                            "points answer ranging requests. Most routers made before ~2019 " +
+                            "don't; Google/Nest WiFi and many mesh systems do. One capable " +
+                            "AP would prove the path; three with known positions would " +
+                            "locate you outright, with no dead reckoning involved."
+                    },
                     modifier = Modifier.padding(top = 8.dp),
                 )
 
@@ -69,6 +78,19 @@ fun RttCard(
                     }
                 }
             }
+
+            Text(
+                if (uwbSupportedByDevice) {
+                    "This phone also has ultra-wideband. UWB ranges to 10-30 cm rather " +
+                        "than metres — the only radio technology that reaches cabinet " +
+                        "level — but it needs a UWB tag or anchor at the other end."
+                } else {
+                    "No ultra-wideband radio on this phone, so the 10-30 cm ranging tier " +
+                        "is closed here regardless of what is installed in the building."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }

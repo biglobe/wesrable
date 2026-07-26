@@ -110,6 +110,8 @@ fun MainScreen(
                     measurements = state.rttMeasurements,
                     supportedByDevice = state.rttSupportedByDevice,
                     respondersInRange = state.rttRespondersInRange,
+                    accessPointsInRange = state.rttAccessPointsInRange,
+                    uwbSupportedByDevice = state.uwbSupportedByDevice,
                 )
             }
             item {
