@@ -4,6 +4,7 @@ import com.wesrable.positioning.model.ResolutionBin
 import com.wesrable.positioning.model.SurveyPoint
 import com.wesrable.positioning.model.SurveyReport
 import com.wesrable.positioning.model.SurveyReportStatus
+import com.wesrable.positioning.model.SurveySignalCensus
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.hypot
@@ -81,27 +82,54 @@ object FingerprintCrossValidation {
         listOf(0.0, 0.5, 1.0, 2.0, 4.0, 8.0, Double.POSITIVE_INFINITY)
 
     fun report(points: List<SurveyPoint>): SurveyReport {
+        val inventory = inventoryOf(points)
+
         if (points.size < MIN_POINTS) {
             return SurveyReport(
                 status = SurveyReportStatus.NOT_ENOUGH_POINTS,
                 pointCount = points.size,
                 spanMeters = spanOf(points),
+                census = inventory,
             )
         }
 
-        // Pass one: the noise floor. Only same-place, different-pass pairs,
-        // which is a small enough set to hold in memory outright.
+        // Pass one: the noise floor, and a tally of which signal types are
+        // actually carrying the comparisons. Only same-place, different-pass
+        // pairs are kept, which is a small enough set to hold in memory.
         val revisitDistances = mutableListOf<Double>()
-        forEachComparablePair(points) { a, b, separation, signal ->
+        var comparedPairs = 0
+        var pairsUsingWifi = 0
+        var pairsUsingBle = 0
+        var pairsUsingMagnetic = 0
+        var pairsWifiStale = 0
+
+        forEachComparablePair(points) { indexA, indexB, separation, signal ->
+            comparedPairs++
+            val a = points[indexA]
+            val b = points[indexB]
+            val stale = isStaleWifiPair(a, b)
+            if (stale) pairsWifiStale++
+            if (!stale && (a.wifiRssi.isNotEmpty() || b.wifiRssi.isNotEmpty())) pairsUsingWifi++
+            if (a.bleRssi.isNotEmpty() || b.bleRssi.isNotEmpty()) pairsUsingBle++
+            if (a.magneticMagnitudeUt != null && b.magneticMagnitudeUt != null) pairsUsingMagnetic++
             if (separation <= NEAR_REPEAT_METERS) revisitDistances.add(signal)
         }
+
+        val census = inventory.copy(
+            pairsUsingWifi = pairsUsingWifi,
+            pairsUsingBle = pairsUsingBle,
+            pairsUsingMagnetic = pairsUsingMagnetic,
+            pairsWifiStale = pairsWifiStale,
+        )
 
         if (revisitDistances.size < MIN_REVISIT_PAIRS) {
             return SurveyReport(
                 status = SurveyReportStatus.NOT_ENOUGH_REVISITS,
                 pointCount = points.size,
+                comparedPairCount = comparedPairs,
                 revisitPairCount = revisitDistances.size,
                 spanMeters = spanOf(points),
+                census = census,
             )
         }
 
@@ -114,10 +142,8 @@ object FingerprintCrossValidation {
         val binPairCounts = IntArray(BIN_EDGES.size - 1)
         val binDistinguished = IntArray(BIN_EDGES.size - 1)
         val neighbors = List(points.size) { TopK(K_NEIGHBORS) }
-        var comparedPairs = 0
 
         forEachComparablePair(points) { a, b, separation, signal ->
-            comparedPairs++
             val bin = binOf(separation)
             binPairCounts[bin]++
             if (signal > noiseFloor) binDistinguished[bin]++
@@ -155,8 +181,48 @@ object FingerprintCrossValidation {
             bins = bins,
             resolvedAtMeters = resolvedAt(bins),
             spanMeters = spanOf(points),
+            census = census,
         )
     }
+
+    /**
+     * What signals the survey saw, before any pairing. Counted separately from
+     * the pair tallies because it answers a different question: distinct
+     * landmarks say what the *building* offers, while the pair counts say what
+     * the *comparison* actually used, and the two come apart badly when WiFi
+     * scans are stale.
+     */
+    private fun inventoryOf(points: List<SurveyPoint>): SurveySignalCensus {
+        if (points.isEmpty()) return SurveySignalCensus()
+        val wifiKeys = HashSet<String>()
+        val bleKeys = HashSet<String>()
+        var withMagnetic = 0
+        points.forEach { point ->
+            wifiKeys.addAll(point.wifiRssi.keys)
+            bleKeys.addAll(point.bleRssi.keys)
+            if (point.magneticMagnitudeUt != null) withMagnetic++
+        }
+        // Median rather than mean: one sample taken next to the router should
+        // not make the whole survey look signal-rich.
+        val wifiCounts = points.map { it.wifiRssi.size.toDouble() }
+        val bleCounts = points.map { it.bleRssi.size.toDouble() }
+        return SurveySignalCensus(
+            distinctWifiAps = wifiKeys.size,
+            distinctBleDevices = bleKeys.size,
+            medianWifiPerSample = percentile(wifiCounts, 0.5).toInt(),
+            medianBlePerSample = percentile(bleCounts, 0.5).toInt(),
+            samplesWithMagnetic = withMagnetic,
+        )
+    }
+
+    /**
+     * Whether two samples carry the same WiFi scan rather than two readings of
+     * the same place. Byte-identical maps across a dozen access points do not
+     * happen twice by chance; they happen because Android returned the cached
+     * scan both times.
+     */
+    private fun isStaleWifiPair(a: SurveyPoint, b: SurveyPoint): Boolean =
+        a.wifiRssi.isNotEmpty() && a.wifiRssi == b.wifiRssi
 
     /**
      * Every pair worth comparing, with its physical separation and its signal
@@ -172,7 +238,7 @@ object FingerprintCrossValidation {
             for (j in i + 1 until points.size) {
                 val b = points[j]
                 if (abs(a.recordedAtMillis - b.recordedAtMillis) < MIN_SEPARATION_MILLIS) continue
-                val staleWifi = a.wifiRssi.isNotEmpty() && a.wifiRssi == b.wifiRssi
+                val staleWifi = isStaleWifiPair(a, b)
                 val signal = FingerprintMatcher.signalDistance(
                     wifiA = a.wifiRssi,
                     bleA = a.bleRssi,

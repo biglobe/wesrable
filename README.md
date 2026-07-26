@@ -515,6 +515,30 @@ three were arrived at by watching the analysis get them wrong first:
   band scoring near 10% is telling you it is indistinguishable from standing
   still.
 
+#### What the survey had to work with
+
+A weak resolution curve has two explanations that point in opposite directions:
+the building genuinely has few distinct signals, or the app is failing to use
+the ones it has. The first means stop walking and buy hardware; the second is a
+bug. Nothing else in the report separates them, and guessing wrong costs either
+an afternoon of laps or a purchase, so the report also counts what went in —
+distinct access points and BLE devices, how many were visible at a time, and
+which signal type actually carried each comparison.
+
+The pair tallies and the inventory come apart in one specific way worth
+watching. Android throttles WiFi scans to about one per 30 s, so a survey can
+see a dozen access points while barely using them: the readings are frozen
+between scans, and identical readings are discarded rather than believed.
+`pairsWifiStale` measures that directly.
+
+In practice it fires rarely, and the JVM runs showed why: the 15-second time
+gate already removes same-pass pairs, and pairs from *different* passes carry
+different shadowing, so byte-identical WiFi across two passes essentially never
+happens. The stale-scan guard is belt-and-braces rather than load-bearing —
+which is itself useful to know, since it means a weak curve with WiFi
+participating in most comparisons is a statement about the building rather than
+about the scan throttle.
+
 Physical separations come from dead reckoning, which drifts. That matters far
 less than it sounds: drift accumulates over a walk, while every comparison here
 is between two points a few metres apart, over which the relative error is

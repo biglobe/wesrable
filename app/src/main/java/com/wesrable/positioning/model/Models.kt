@@ -240,6 +240,32 @@ data class ResolutionBin(
 )
 
 /**
+ * What the survey actually had to work with.
+ *
+ * Without this, a weak resolution curve has two explanations that point in
+ * opposite directions: the building genuinely has few distinct signals, or the
+ * app is failing to use the ones it has. The first means stop walking and buy
+ * hardware; the second means fix the app. Counting what went in separates them.
+ *
+ * [pairsWifiStale] is the one to watch. Android throttles WiFi scans to roughly
+ * one per 30 s, so samples taken half a metre apart routinely carry
+ * byte-identical readings, and those are discarded rather than believed. If
+ * nearly every pair is stale, the survey is not really using WiFi at all,
+ * whatever [distinctWifiAps] says — it is running on BLE and the magnetometer.
+ */
+data class SurveySignalCensus(
+    val distinctWifiAps: Int = 0,
+    val distinctBleDevices: Int = 0,
+    val medianWifiPerSample: Int = 0,
+    val medianBlePerSample: Int = 0,
+    val samplesWithMagnetic: Int = 0,
+    val pairsUsingWifi: Int = 0,
+    val pairsUsingBle: Int = 0,
+    val pairsUsingMagnetic: Int = 0,
+    val pairsWifiStale: Int = 0,
+)
+
+/**
  * What a dense survey of this particular building actually supports —
  * measured, not assumed.
  *
@@ -269,6 +295,8 @@ data class SurveyReport(
     val resolvedAtMeters: Double? = null,
     /** Diagonal of the surveyed area, as a sanity check on coverage. */
     val spanMeters: Double = 0.0,
+    /** What the survey had to work with — reported whatever the status. */
+    val census: SurveySignalCensus = SurveySignalCensus(),
 )
 
 /**
