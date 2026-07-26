@@ -554,6 +554,93 @@ Cost at the survey cap of 1200 samples (over 700,000 pairs) is a few hundred
 milliseconds on a desktop JVM, which is why the report runs on
 `Dispatchers.Default` rather than the main thread.
 
+### Printed markers: naming the exact cabinet
+
+Everything else in this app answers "where am I?". This answers "what am I
+looking at?", and it exists because the first question cannot be pushed hard
+enough to answer the second.
+
+Passive signals place a walker in the right room and, measured by the dense
+survey above, no closer than a metre or two. Cabinets stand 30-60 cm apart and
+look identical. That gap does not close with better filtering, more survey
+passes or a smarter matcher — it closes when identity stops being *inferred*
+from a position and starts being *read*. WiFi RTT would have helped and no
+access point here answers ranging; UWB would solve it outright and needs
+provisioned anchors at both ends. A printed marker costs a sheet of paper.
+
+**The marker.** A 6x6 grid of cells: a one-cell black border, and 4x4 = 16
+payload bits inside. The border is what makes a marker findable at all — it
+produces a solid dark quadrilateral that survives thresholding under nearly any
+lighting. Sixteen bits could name 65,536 markers and that would be a mistake:
+at a few pixels per cell, bits get read wrong, and if every pattern were valid
+a misread would silently return *a different cabinet*. So `MarkerDictionary`
+keeps only codes at least 6 bits from each other **and from every 90-degree
+rotation of each other**, generated greedily rather than tabulated so the
+printed pattern and the decoder cannot drift apart. That buys three things: two
+wrong bits are corrected outright, the marker's orientation falls out of which
+rotation matched, and a bad read returns nothing instead of a wrong answer.
+Twenty-three markers survive the constraint, which is 23 distinguishable
+objects.
+
+**The pipeline**, all in `vision/` and all dependency-free: local-mean adaptive
+threshold over an integral image → Moore-neighbour contour tracing →
+Douglas-Peucker polygon fitting, keeping convex quads → Heckbert square-to-quad
+homography → Otsu over the 36 sampled cells → dictionary lookup. Every stage
+exists to discard candidates; a room yields hundreds of dark outlines, a handful
+of quads, and zero or a few real markers. The border-is-black test alone removes
+essentially every door frame, picture frame and shadow edge.
+
+OpenCV was deliberately not used. It would add well over a hundred megabytes of
+native libraries for six algorithms that fit in a few hundred lines, and — the
+real cost — it would put the part of this app that most needs measuring behind a
+wall the JVM harness cannot see through.
+
+#### What it actually detects
+
+Measured against synthetic photographs rendered through a pinhole camera, with
+perspective, roll, motion blur, sensor noise and a lighting gradient across the
+frame. 40 trials per row, at 640x480 with a 65-degree field of view:
+
+| Condition | Correct |
+|---|---|
+| 15 cm marker, head-on at 1 m / 2 m / 3 m / 4 m | 100% / 98% / 100% / 98% |
+| 15 cm at 2 m, 30 / 45 / 60 degrees off-square | 98% / 93% / 95% |
+| 2 m, motion blur | 95% |
+| 2 m, heavy sensor noise | 98% |
+| 2 m, harsh lighting gradient | 98% |
+| 2 m, blur + noise + lighting together | 95% |
+| 6 cm sticker, head-on at 1 m / 1.5 m | 100% / 95% |
+| 6 cm sticker at 1 m, 40 degrees off-square | 93% |
+| **Wrong marker id reported, anywhere above** | **0** |
+| **False markers across 120 cluttered, marker-free frames** | **0** |
+
+The app runs analysis at 1280x720 rather than 640x480, so real range is roughly
+double the table.
+
+Those figures are about 1.5x better in range than the first run, and the reason
+is worth recording. The first pass showed hard cliffs — 100% at 3 m and 0% at
+4 m — which is not how physics degrades. Sweeping the quad filter's minimum side
+against apparent marker size showed why: the filter, not the decoder, was
+binding. The payload still reads 100% correctly at 16 px a side (under 3 pixels
+per cell), while `MIN_SIDE_PIXELS` was set to 20 and therefore discarding
+readable markers unread. Detection only genuinely collapses below 14 px.
+
+It is now 14 rather than 12, and that is a deliberate trade. False positives on
+cluttered frames first appear at 10, so 12 would have taken 17% more range with
+one step of margin. Naming the wrong cabinet is a far worse failure than failing
+to name one: the user can always step closer, but has no way to notice a
+confident wrong answer.
+
+Detection costs about 6 ms per 640x480 frame on a desktop JVM. Frames are
+analysed on a background executor with `KEEP_ONLY_LATEST`, so a slow frame is
+dropped rather than queued and what is analysed is always what the camera is
+pointed at now.
+
+**Privacy.** Frames are read and discarded; nothing is stored. Camera permission
+is requested at the feature rather than at launch, so declining it costs only
+this card. The app still holds no `INTERNET` permission, so a frame has nowhere
+to go even in principle.
+
 ## Project layout
 
 ```
@@ -561,12 +648,15 @@ app/src/main/java/com/wesrable/positioning/
   model/            Orientation, WifiSignal, BleSignal, Anchor, PositionEstimate,
                      Fingerprint, RoomEstimate...
   sensors/          OrientationSensor, BarometerSensor, MagnetometerSensor, StepDetector
-  scan/             WifiScanner, BleScanner, BleAdvertisementParser
+  scan/             WifiScanner, BleScanner, BleAdvertisementParser, RttRanger,
+                     MarkerAnalyzer
+  vision/           MarkerDictionary, AdaptiveThreshold, ContourTracer, QuadFitter,
+                     Homography, MarkerDecoder, MarkerDetector
   positioning/       RssiDistance, Trilateration, DeadReckoningTracker, RoomAnchorMap,
                      MagneticSequenceMatcher, Relocalizer, SurveyTracker,
                      LoopClosureTracker, PositioningEngine
   fingerprint/      FingerprintStore, FingerprintMatcher, FingerprintCrossValidation,
-                     MapStore, SurveyStore
+                     MapStore, SurveyStore, MarkerStore
   ui/               Jetpack Compose screens
   MainActivity.kt, MainViewModel.kt
 ```
