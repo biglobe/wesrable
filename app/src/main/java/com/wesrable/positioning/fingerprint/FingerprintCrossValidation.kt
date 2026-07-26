@@ -78,10 +78,24 @@ object FingerprintCrossValidation {
     /** A band with fewer pairs than this is reported but not trusted. */
     const val MIN_BIN_PAIRS = 10
 
+    /**
+     * Above this, the pairs dead reckoning calls revisits are barely more alike
+     * than random ones, and the separations underpinning the whole curve cannot
+     * be trusted. Calibrated against simulation: sound positions score about
+     * 0.5, and two metres of accumulated drift pushes it past 0.85.
+     */
+    const val MAX_TRUSTWORTHY_REVISIT_RATIO = 0.85
+
+    /** Pair distances kept for the overall median. */
+    private const val OVERALL_SAMPLE = 20_000
+
     private val BIN_EDGES =
         listOf(0.0, 0.5, 1.0, 2.0, 4.0, 8.0, Double.POSITIVE_INFINITY)
 
-    fun report(points: List<SurveyPoint>): SurveyReport {
+    fun report(
+        points: List<SurveyPoint>,
+        missingAtFloor: Boolean = true,
+    ): SurveyReport {
         val inventory = inventoryOf(points)
 
         if (points.size < MIN_POINTS) {
@@ -102,8 +116,14 @@ object FingerprintCrossValidation {
         var pairsUsingBle = 0
         var pairsUsingMagnetic = 0
         var pairsWifiStale = 0
+        var unmatchedWifi = 0.0
+        var unmatchedBle = 0.0
+        // A bounded, deterministic sample of all pair distances, for comparison
+        // against the revisit ones. Keeping every distance would run to
+        // hundreds of megabytes at the survey cap.
+        val overall = Reservoir(OVERALL_SAMPLE, seed = 20_240_617L)
 
-        forEachComparablePair(points) { indexA, indexB, separation, signal ->
+        forEachComparablePair(points, missingAtFloor) { indexA, indexB, separation, signal ->
             comparedPairs++
             val a = points[indexA]
             val b = points[indexB]
@@ -112,7 +132,17 @@ object FingerprintCrossValidation {
             if (!stale && (a.wifiRssi.isNotEmpty() || b.wifiRssi.isNotEmpty())) pairsUsingWifi++
             if (a.bleRssi.isNotEmpty() || b.bleRssi.isNotEmpty()) pairsUsingBle++
             if (a.magneticMagnitudeUt != null && b.magneticMagnitudeUt != null) pairsUsingMagnetic++
+            unmatchedWifi += unmatchedFractionOf(a.wifiRssi, b.wifiRssi)
+            unmatchedBle += unmatchedFractionOf(a.bleRssi, b.bleRssi)
+            overall.offer(signal)
             if (separation <= NEAR_REPEAT_METERS) revisitDistances.add(signal)
+        }
+
+        val overallMedian = percentile(overall.values(), 0.5)
+        val revisitRatio = if (overallMedian <= 0.0 || revisitDistances.isEmpty()) {
+            0.0
+        } else {
+            percentile(revisitDistances, 0.5) / overallMedian
         }
 
         val census = inventory.copy(
@@ -120,6 +150,10 @@ object FingerprintCrossValidation {
             pairsUsingBle = pairsUsingBle,
             pairsUsingMagnetic = pairsUsingMagnetic,
             pairsWifiStale = pairsWifiStale,
+            unmatchedWifiFraction =
+                if (comparedPairs == 0) 0.0 else unmatchedWifi / comparedPairs,
+            unmatchedBleFraction =
+                if (comparedPairs == 0) 0.0 else unmatchedBle / comparedPairs,
         )
 
         if (revisitDistances.size < MIN_REVISIT_PAIRS) {
@@ -130,6 +164,7 @@ object FingerprintCrossValidation {
                 revisitPairCount = revisitDistances.size,
                 spanMeters = spanOf(points),
                 census = census,
+                revisitSignalRatio = revisitRatio,
             )
         }
 
@@ -143,7 +178,7 @@ object FingerprintCrossValidation {
         val binDistinguished = IntArray(BIN_EDGES.size - 1)
         val neighbors = List(points.size) { TopK(K_NEIGHBORS) }
 
-        forEachComparablePair(points) { a, b, separation, signal ->
+        forEachComparablePair(points, missingAtFloor) { a, b, separation, signal ->
             val bin = binOf(separation)
             binPairCounts[bin]++
             if (signal > noiseFloor) binDistinguished[bin]++
@@ -182,6 +217,7 @@ object FingerprintCrossValidation {
             resolvedAtMeters = resolvedAt(bins),
             spanMeters = spanOf(points),
             census = census,
+            revisitSignalRatio = revisitRatio,
         )
     }
 
@@ -225,12 +261,29 @@ object FingerprintCrossValidation {
         a.wifiRssi.isNotEmpty() && a.wifiRssi == b.wifiRssi
 
     /**
+     * Share of the landmarks in this pair that only one side saw.
+     *
+     * This is the churn measurement. Two readings taken at the same spot on
+     * different passes should see the same devices; when a large share do not,
+     * the building is full of transient advertisers — phones passing, trackers
+     * rotating their address, neighbours' devices hovering at the edge of
+     * range — and how those absences are scored dominates every other term.
+     */
+    private fun unmatchedFractionOf(a: Map<String, Int>, b: Map<String, Int>): Double {
+        val union = a.keys.size + b.keys.size - a.keys.count { it in b.keys }
+        if (union == 0) return 0.0
+        val matched = a.keys.count { it in b.keys }
+        return (union - matched).toDouble() / union
+    }
+
+    /**
      * Every pair worth comparing, with its physical separation and its signal
      * distance. Streamed to [action] rather than returned, because at the
      * survey cap the list would run to hundreds of thousands of entries.
      */
     private inline fun forEachComparablePair(
         points: List<SurveyPoint>,
+        missingAtFloor: Boolean,
         action: (indexA: Int, indexB: Int, separationMeters: Double, signalDistance: Double) -> Unit,
     ) {
         for (i in points.indices) {
@@ -247,6 +300,7 @@ object FingerprintCrossValidation {
                     bleB = b.bleRssi,
                     magneticB = b.magneticMagnitudeUt,
                     skipWifi = staleWifi,
+                    missingAtFloor = missingAtFloor,
                 ) ?: continue
                 action(i, j, hypot(a.xMeters - b.xMeters, a.yMeters - b.yMeters), signal)
             }
@@ -317,6 +371,28 @@ object FingerprintCrossValidation {
         val sorted = values.sorted()
         val rank = ceil(fraction * sorted.size).toInt().coerceIn(1, sorted.size)
         return sorted[rank - 1]
+    }
+
+    /**
+     * Fixed-size uniform sample of a stream of unknown length, so the overall
+     * median costs a bounded amount of memory however long the survey is.
+     */
+    private class Reservoir(private val capacity: Int, seed: Long) {
+        private val kept = DoubleArray(capacity)
+        private val random = java.util.Random(seed)
+        private var seen = 0
+
+        fun offer(value: Double) {
+            if (seen < capacity) {
+                kept[seen] = value
+            } else {
+                val slot = (random.nextDouble() * (seen + 1)).toInt()
+                if (slot < capacity) kept[slot] = value
+            }
+            seen++
+        }
+
+        fun values(): List<Double> = kept.take(minOf(seen, capacity))
     }
 
     /**

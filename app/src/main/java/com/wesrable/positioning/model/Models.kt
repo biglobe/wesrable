@@ -263,6 +263,10 @@ data class SurveySignalCensus(
     val pairsUsingBle: Int = 0,
     val pairsUsingMagnetic: Int = 0,
     val pairsWifiStale: Int = 0,
+    /** Share of WiFi landmarks in a typical pair that only one side saw. */
+    val unmatchedWifiFraction: Double = 0.0,
+    /** The same for BLE, where transient advertisers make it far higher. */
+    val unmatchedBleFraction: Double = 0.0,
 )
 
 /**
@@ -297,6 +301,21 @@ data class SurveyReport(
     val spanMeters: Double = 0.0,
     /** What the survey had to work with — reported whatever the status. */
     val census: SurveySignalCensus = SurveySignalCensus(),
+    /**
+     * How much more alike the pairs dead reckoning calls "the same place" are
+     * than a typical pair: the median signal distance of revisits over the
+     * median across all pairs.
+     *
+     * This checks the ruler rather than the thing being measured. If the
+     * positions are sound, samples the app believes are co-located really are,
+     * and should be markedly more alike in signal than two points picked at
+     * random — a ratio well below 1. A ratio near 1 says the pairs being called
+     * revisits are no more alike than anything else, which means they are not
+     * revisits: position error is large enough that the separations every band
+     * in the curve is built from are fiction. The signals are then being scored
+     * against a corrupted axis, and no amount of extra walking helps.
+     */
+    val revisitSignalRatio: Double = 0.0,
 )
 
 /**

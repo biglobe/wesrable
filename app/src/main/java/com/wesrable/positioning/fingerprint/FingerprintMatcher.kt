@@ -22,6 +22,12 @@ object FingerprintMatcher {
     private const val RSSI_WEIGHT = 1.0
     private const val MAGNETIC_WEIGHT = 0.3
 
+    /**
+     * The weakest signal a scan reports. A landmark absent from one side was
+     * not "15 dB different" — it was below this.
+     */
+    const val DETECTION_FLOOR_DBM = -95.0
+
     fun estimate(
         liveWifi: List<WifiSignal>,
         liveBle: List<BleSignal>,
@@ -100,17 +106,18 @@ object FingerprintMatcher {
         bleB: Map<String, Int>,
         magneticB: Float?,
         skipWifi: Boolean = false,
+        missingAtFloor: Boolean = true,
     ): Double? {
         var weighted = 0.0
         var totalWeight = 0.0
 
         if (!skipWifi) {
-            rssiMapDistance(wifiA, wifiB)?.let {
+            rssiMapDistance(wifiA, wifiB, missingAtFloor)?.let {
                 weighted += RSSI_WEIGHT * it
                 totalWeight += RSSI_WEIGHT
             }
         }
-        rssiMapDistance(bleA, bleB)?.let {
+        rssiMapDistance(bleA, bleB, missingAtFloor)?.let {
             weighted += RSSI_WEIGHT * it
             totalWeight += RSSI_WEIGHT
         }
@@ -124,21 +131,39 @@ object FingerprintMatcher {
 
     /**
      * RMS RSSI difference over the union of keys seen in either map, or null
-     * when neither side saw anything and there is nothing to compare. A key
-     * present on only one side is treated as if it differed by
-     * [MISSING_SIGNAL_PENALTY_DB] dB, since a landmark that vanished or
-     * appeared is itself strong evidence of a different location.
+     * when neither side saw anything and there is nothing to compare.
+     *
+     * How an absent landmark is scored decides whether this metric works at
+     * all in a busy building. With [missingAtFloor], a key present on only one
+     * side is compared against [DETECTION_FLOOR_DBM] — what "not seen" actually
+     * means — so a beacon that was at -50 dBm and vanished counts as a 45 dB
+     * difference, while one that was at -92 dBm and vanished counts as 3 dB.
+     *
+     * The alternative, a flat [MISSING_SIGNAL_PENALTY_DB] for every absence,
+     * scores those two identically, and that is ruinous in a home with dozens
+     * of visible devices. Most of them sit near the detection floor and wink in
+     * and out between scans for reasons that have nothing to do with where the
+     * phone is; each flicker then injects a large, *distance-independent* term.
+     * With enough devices those terms swamp the few dB of real change across a
+     * metre, which flattens the resolution curve at short range while leaving
+     * it intact at long range — exactly the shape a real survey produced here.
      */
-    private fun rssiMapDistance(live: Map<String, Int>, stored: Map<String, Int>): Double? {
+    private fun rssiMapDistance(
+        live: Map<String, Int>,
+        stored: Map<String, Int>,
+        missingAtFloor: Boolean = true,
+    ): Double? {
         val keys = live.keys + stored.keys
         if (keys.isEmpty()) return null
         val sumSquares = keys.sumOf { key ->
             val liveVal = live[key]
             val storedVal = stored[key]
-            val diff = if (liveVal != null && storedVal != null) {
-                (liveVal - storedVal).toDouble()
-            } else {
-                MISSING_SIGNAL_PENALTY_DB
+            val diff = when {
+                liveVal != null && storedVal != null -> (liveVal - storedVal).toDouble()
+                !missingAtFloor -> MISSING_SIGNAL_PENALTY_DB
+                // Present on exactly one side: compare the value that was seen
+                // against the floor it must have fallen below on the other.
+                else -> (liveVal ?: storedVal)!!.toDouble() - DETECTION_FLOOR_DBM
             }
             diff * diff
         }

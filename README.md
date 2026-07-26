@@ -515,6 +515,52 @@ three were arrived at by watching the analysis get them wrong first:
   band scoring near 10% is telling you it is indistinguishable from standing
   still.
 
+#### Checking the ruler, not just the thing measured
+
+A real survey in a signal-rich flat — 29 access points, 68 BLE devices —
+resolved only 3.6 m, with a curve that was flat from 0.5 m to 4 m and then
+climbed steeply. Rich signals and poor resolution do not go together, and a
+curve that is flat at short range but fine at long range is not how signal
+degradation looks.
+
+Two candidates were simulated against that shape. The first was landmark churn:
+in a busy building most devices sit near the detection floor and wink in and out
+between scans, and scoring every absence as a flat 15 dB penalty injects a large
+*distance-independent* term into every comparison. That turned out to be a real
+bug and a real improvement — but simulating it reproduced a curve still climbing
+steeply (11/17/46/64/77/80%), nothing like the observed one.
+
+The second candidate was the positions themselves, and it fits exactly.
+Dead-reckoning error is a slow random walk: two samples seconds apart share
+almost all of it, while two from different passes differ by the whole
+accumulated drift — and the report only ever compares *across* passes, because
+that is what makes it honest. Sweeping simulated drift:
+
+| Accumulated drift | Resolution curve |
+|---|---|
+| none | 11 / 17 / 46 / 64 / 77 / 80% |
+| 1 m | 11 / 24 / 36 / 57 / 71 / 78% |
+| **2 m** | **10 / 10 / 14 / 23 / 35 / 38%** |
+| 3 m | 8 / 6 / 7 / 14 / 19 / 12% |
+| **observed** | **10 / 17 / 14 / 14 / 35 / 49%** |
+
+About two metres of drift reproduces it. The signals were never the problem;
+the axis they were being sorted along was.
+
+`revisitSignalRatio` detects this without needing ground truth. It compares the
+median signal distance of the pairs dead reckoning calls co-located against the
+median across all pairs. If the positions are sound, "same place" pairs really
+are, and should be markedly more alike than random ones. Measured across the
+simulations: 0.32 with sound positions, 0.79 in a busy building with no drift,
+0.95 at two metres of drift, 1.01 at five. Above
+`MAX_TRUSTWORTHY_REVISIT_RATIO` the report says so before anything else, since a
+confident resolution figure resting on a bent ruler is worse than no figure.
+
+The churn fix shipped anyway, on its own merits: in the busy simulation it moved
+median error from 2.9 m to 2.1 m and the 8 m band from 80% to 92%, and in a
+quiet building with no churn it changes nothing at all (0.4 m either way) — so
+it is not trading one building's problem for another's.
+
 #### What the survey had to work with
 
 A weak resolution curve has two explanations that point in opposite directions:

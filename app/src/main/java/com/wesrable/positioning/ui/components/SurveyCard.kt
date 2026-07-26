@@ -241,6 +241,30 @@ private fun censusDiagnosis(report: SurveyReport): String {
 private fun ReadyReport(report: SurveyReport) {
     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+    // Stated before anything else, because if the positions are wrong then
+    // every separation below is fiction and the curve is measuring the wrong
+    // thing. Reporting a confident resolution figure on top of a broken ruler
+    // would be worse than reporting nothing.
+    if (report.revisitSignalRatio > FingerprintCrossValidation.MAX_TRUSTWORTHY_REVISIT_RATIO) {
+        Text("Read this first", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "The samples this app believes were taken at the same spot are barely " +
+                "more alike in signal than two samples picked at random " +
+                "(%.2f, where sound positions score around 0.5). That means they were "
+                    .format(report.revisitSignalRatio) +
+                "not really the same spot: the walked position drifted far enough " +
+                "between passes that the distances everything below is sorted by are " +
+                "unreliable.\n\n" +
+                "So the numbers below understate what these signals can do — they are " +
+                "being scored against a bent ruler. Fix the ruler first: run the " +
+                "stride calibration above over a known distance, then walk the survey " +
+                "again. More passes will not help until then.",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+    }
+
     Text("Where it puts you", style = MaterialTheme.typography.titleSmall)
     Text(
         "Holding out each sample and locating it from the others: " +
@@ -279,9 +303,11 @@ private fun ReadyReport(report: SurveyReport) {
         "Based on ${report.comparedPairCount} compared pairs from ${report.pointCount} " +
             "samples over %.0f m, with the same-place noise floor at %.1f dB set by "
                 .format(report.spanMeters, report.noiseFloorDb) +
-            "${report.revisitPairCount} revisit pairs. Physical separations come from " +
-            "dead reckoning, which drifts over a walk but is accurate between two points " +
-            "a few metres apart — which is all these bands ask of it.",
+            "${report.revisitPairCount} revisit pairs, which score %.2f against a typical pair "
+            .format(report.revisitSignalRatio) +
+            "(lower is better; near 1 means the positions cannot be trusted). Physical " +
+            "separations come from dead reckoning, and how far that can be trusted is " +
+            "exactly what the ratio measures.",
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(top = 8.dp),
     )
