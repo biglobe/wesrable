@@ -11,11 +11,16 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wesrable.positioning.MainViewModel
 import com.wesrable.positioning.ui.components.BarometerCard
 import com.wesrable.positioning.ui.components.BleListCard
+import com.wesrable.positioning.ui.components.MarkerCard
+import com.wesrable.positioning.ui.components.MarkerSheetScreen
 import com.wesrable.positioning.ui.components.OrientationCard
 import com.wesrable.positioning.ui.components.PermissionCard
 import com.wesrable.positioning.ui.components.PositionCard
@@ -33,6 +38,15 @@ fun MainScreen(
     onRequestPermissions: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
+    var showingMarkerSheet by remember { mutableStateOf(false) }
+
+    if (showingMarkerSheet) {
+        MarkerSheetScreen(
+            labels = state.markerLabels,
+            onClose = { showingMarkerSheet = false },
+        )
+        return
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Device Positioning") }) },
@@ -88,6 +102,19 @@ fun MainScreen(
                     onCancel = { viewModel.cancelStrideCalibration() },
                     onFinish = { viewModel.finishStrideCalibration(it) },
                     onReset = { viewModel.resetStrideCalibration() },
+                )
+            }
+            item {
+                MarkerCard(
+                    scanning = state.markerScanning,
+                    visibleMarkers = state.visibleMarkers,
+                    focusedMarker = state.focusedMarker,
+                    labels = state.markerLabels,
+                    onSetScanning = { viewModel.setMarkerScanning(it) },
+                    onMarkers = { viewModel.onMarkersDetected(it) },
+                    onName = { viewModel.nameFocusedMarker(it) },
+                    onForget = { viewModel.forgetMarker(it) },
+                    onShowSheet = { showingMarkerSheet = true },
                 )
             }
             item {

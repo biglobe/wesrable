@@ -75,5 +75,13 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
 
+    // CameraX supplies frames for on-device marker reading. camera-view is
+    // included for its PreviewView, since aiming at a cabinet without seeing
+    // what the camera sees is guesswork.
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

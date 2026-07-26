@@ -7,11 +7,14 @@ import com.wesrable.positioning.fingerprint.FingerprintCrossValidation
 import com.wesrable.positioning.fingerprint.FingerprintMatcher
 import com.wesrable.positioning.fingerprint.FingerprintStore
 import com.wesrable.positioning.fingerprint.MapStore
+import com.wesrable.positioning.fingerprint.MarkerStore
 import com.wesrable.positioning.fingerprint.SurveyStore
 import com.wesrable.positioning.model.Anchor
 import com.wesrable.positioning.model.BarometricReading
 import com.wesrable.positioning.model.BleSignal
+import com.wesrable.positioning.model.DetectedMarker
 import com.wesrable.positioning.model.Fingerprint
+import com.wesrable.positioning.model.MarkerLabel
 import com.wesrable.positioning.model.Orientation
 import com.wesrable.positioning.model.PositionEstimate
 import com.wesrable.positioning.model.PositionSource
@@ -83,8 +86,22 @@ data class UiState(
     val surveyPointCount: Int = 0,
     val surveyReport: SurveyReport = SurveyReport(SurveyReportStatus.NOT_ENOUGH_POINTS),
     val surveyReportRunning: Boolean = false,
+    /** Markers in view right now, nearest (largest on screen) first. */
+    val visibleMarkers: List<DetectedMarker> = emptyList(),
+    val markerLabels: List<MarkerLabel> = emptyList(),
+    val markerScanning: Boolean = false,
     val isSensing: Boolean = false,
-)
+) {
+    /**
+     * The marker being looked at: the one filling most of the frame.
+     *
+     * Nearest-wins rather than centre-most, because a cabinet door is normally
+     * approached rather than aimed at, and apparent size separates "the one I
+     * am standing at" from "the one across the room" far more reliably than
+     * position in frame does.
+     */
+    val focusedMarker: DetectedMarker? get() = visibleMarkers.firstOrNull()
+}
 
 private const val STALE_BLE_MILLIS = 12_000L
 private const val RETRY_BACKOFF_MILLIS = 2_000L
@@ -107,6 +124,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val fingerprintStore = FingerprintStore(application)
     private val mapStore = MapStore(application)
     private val surveyStore = SurveyStore(application)
+    private val markerStore = MarkerStore(application)
     private val strideCalibration = StrideCalibration(application)
 
     /** Populated via a one-time site calibration; empty by default because
@@ -132,6 +150,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         UiState(
             savedRooms = fingerprintStore.labelCounts(),
             surveyPointCount = loadedSurvey.size,
+            markerLabels = markerStore.all,
             storedTrail = loadedMap.trail,
             relocalizationState = engine.relocalizationState,
             storedWaypointCount = loadedMap.waypoints.size,
@@ -275,6 +294,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             _uiState.update { it.copy(surveyReport = report, surveyReportRunning = false) }
         }
+    }
+
+    /**
+     * Whether the camera is running. Kept off by default and switched on
+     * deliberately: it is the one sensor here a user would reasonably want to
+     * know about, and leaving it running to no purpose costs battery besides.
+     */
+    fun setMarkerScanning(enabled: Boolean) {
+        _uiState.update {
+            it.copy(
+                markerScanning = enabled,
+                visibleMarkers = if (enabled) it.visibleMarkers else emptyList(),
+            )
+        }
+    }
+
+    /** Called from the camera analyzer for every processed frame. */
+    fun onMarkersDetected(markers: List<DetectedMarker>) {
+        if (markers.isNotEmpty()) markerStore.noteSeen(markers.map { it.id })
+        _uiState.update {
+            it.copy(
+                visibleMarkers = markers,
+                markerLabels = if (markers.isEmpty()) it.markerLabels else markerStore.all,
+            )
+        }
+    }
+
+    /**
+     * Names the marker currently in view, pinning it to where the walker is
+     * standing — which, unlike everything inferred from signals, is exactly
+     * where the furniture is, because the user walked to it to say so.
+     */
+    fun nameFocusedMarker(label: String) {
+        val marker = _uiState.value.focusedMarker ?: return
+        val position = engine.currentPosition()
+        markerStore.name(marker.id, label, position.xMeters, position.yMeters)
+        _uiState.update { it.copy(markerLabels = markerStore.all) }
+    }
+
+    fun forgetMarker(markerId: Int) {
+        markerStore.forget(markerId)
+        _uiState.update { it.copy(markerLabels = markerStore.all) }
     }
 
     fun clearSurvey() {

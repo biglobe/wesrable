@@ -113,6 +113,9 @@ class PositioningEngine(
     /** Every (east, north) position visited so far — the walked path. */
     val trail: List<Pair<Double, Double>> get() = deadReckoning.trail
 
+    /** Where dead reckoning believes the walker is standing right now. */
+    fun currentPosition(): PositionEstimate = deadReckoning.currentPosition()
+
     /** Loops closed so far, and by how much the last one shifted the trail. */
     var closureCount: Int = 0
         private set

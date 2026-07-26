@@ -174,6 +174,44 @@ data class SurveyPoint(
     val recordedAtMillis: Long,
 )
 
+/**
+ * One printed marker recognised in a camera frame.
+ *
+ * [sizePixels] is the shortest side of the marker as it appeared, which is the
+ * only distance cue available without knowing the camera's focal length: a
+ * marker filling the frame is at arm's length, one 30 px across is at the far
+ * end of the room. That is enough for the job here — picking out the cabinet
+ * being *looked at* means preferring the nearest marker, not measuring it.
+ */
+data class DetectedMarker(
+    val id: Int,
+    val centerXPixels: Double,
+    val centerYPixels: Double,
+    val sizePixels: Double,
+    /** 90-degree steps between the marker as printed and as seen. */
+    val rotationSteps: Int,
+    /** Payload bits that needed correcting; 0 is a clean read. */
+    val bitErrors: Int,
+)
+
+/**
+ * A marker the user has given a name to, pinned where they stood when they
+ * named it.
+ *
+ * This is the join between the two halves of the problem. Passive signals get
+ * the walker to the right part of the right room and no closer — measured, not
+ * assumed — while the marker says exactly which of several identical cabinets
+ * is in view. Neither answers the question alone.
+ */
+data class MarkerLabel(
+    val markerId: Int,
+    val label: String,
+    val xMeters: Double,
+    val yMeters: Double,
+    val seenCount: Int,
+    val lastSeenMillis: Long,
+)
+
 /** How far a survey report got before running out of evidence. */
 enum class SurveyReportStatus {
     /** Too few samples to say anything. Keep walking. */
