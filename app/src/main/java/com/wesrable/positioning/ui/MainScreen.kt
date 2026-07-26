@@ -20,6 +20,7 @@ import com.wesrable.positioning.ui.components.OrientationCard
 import com.wesrable.positioning.ui.components.PermissionCard
 import com.wesrable.positioning.ui.components.PositionCard
 import com.wesrable.positioning.ui.components.RoomFingerprintCard
+import com.wesrable.positioning.ui.components.RttCard
 import com.wesrable.positioning.ui.components.StrideCalibrationCard
 import com.wesrable.positioning.ui.components.WifiListCard
 
@@ -102,6 +103,13 @@ fun MainScreen(
                 BarometerCard(
                     reading = state.barometer,
                     available = state.barometerAvailable,
+                )
+            }
+            item {
+                RttCard(
+                    measurements = state.rttMeasurements,
+                    supportedByDevice = state.rttSupportedByDevice,
+                    respondersInRange = state.rttRespondersInRange,
                 )
             }
             item {

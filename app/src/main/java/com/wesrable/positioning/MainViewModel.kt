@@ -16,10 +16,12 @@ import com.wesrable.positioning.model.PositionSource
 import com.wesrable.positioning.model.RelocalizationState
 import com.wesrable.positioning.model.RoomAnchor
 import com.wesrable.positioning.model.RoomEstimate
+import com.wesrable.positioning.model.RttMeasurement
 import com.wesrable.positioning.model.StoredMap
 import com.wesrable.positioning.model.WifiSignal
 import com.wesrable.positioning.positioning.PositioningEngine
 import com.wesrable.positioning.scan.BleScanner
+import com.wesrable.positioning.scan.RttRanger
 import com.wesrable.positioning.scan.WifiScanner
 import com.wesrable.positioning.sensors.BarometerSensor
 import com.wesrable.positioning.sensors.MagnetometerSensor
@@ -66,6 +68,9 @@ data class UiState(
     val orientationAvailable: Boolean = false,
     val barometerAvailable: Boolean = false,
     val magnetometerAvailable: Boolean = false,
+    val rttMeasurements: List<RttMeasurement> = emptyList(),
+    val rttSupportedByDevice: Boolean = false,
+    val rttRespondersInRange: Int = 0,
     val isSensing: Boolean = false,
 )
 
@@ -82,6 +87,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val orientationSensor = OrientationSensor(application)
     private val wifiScanner = WifiScanner(application)
     private val bleScanner = BleScanner(application)
+    private val rttRanger = RttRanger(application)
     private val barometerSensor = BarometerSensor(application)
     private val magnetometerSensor = MagnetometerSensor(application)
     private val stepDetector = StepDetector(application)
@@ -112,6 +118,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             orientationAvailable = orientationSensor.isAvailable,
             barometerAvailable = barometerSensor.isAvailable,
             magnetometerAvailable = magnetometerSensor.isAvailable,
+            rttSupportedByDevice = rttRanger.isSupportedByDevice,
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -183,6 +190,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         wifiScanGeneration = wifiScanGeneration,
                     )
                     recompute()
+                }
+            },
+            viewModelScope.launch {
+                rttRanger.ranges().resilient().collect { measurements ->
+                    _uiState.update {
+                        it.copy(
+                            rttMeasurements = measurements.sortedBy { m -> m.distanceMeters },
+                            rttRespondersInRange = rttRanger.respondersInRange().size,
+                        )
+                    }
                 }
             },
             viewModelScope.launch {

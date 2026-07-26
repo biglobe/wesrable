@@ -32,6 +32,23 @@ data class BleSignal(
     val lastSeenMillis: Long,
 )
 
+/**
+ * One time-of-flight distance measurement to an access point (IEEE 802.11mc).
+ *
+ * Unlike an RSSI-derived distance this is an actual measurement rather than an
+ * inference, and it arrives with the radio's own estimate of its error —
+ * which is what lets trilateration weight good measurements above bad ones
+ * instead of treating every landmark as equally trustworthy.
+ */
+data class RttMeasurement(
+    val bssid: String,
+    val distanceMeters: Double,
+    val standardDeviationMeters: Double,
+    val rssiDbm: Int,
+    val attemptedMeasurements: Int,
+    val successfulMeasurements: Int,
+)
+
 /** A reference point (AP or beacon) whose real-world coordinates are known via calibration. */
 data class Anchor(
     val id: String,
