@@ -3,9 +3,11 @@ package com.wesrable.positioning
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.wesrable.positioning.fingerprint.FingerprintCrossValidation
 import com.wesrable.positioning.fingerprint.FingerprintMatcher
 import com.wesrable.positioning.fingerprint.FingerprintStore
 import com.wesrable.positioning.fingerprint.MapStore
+import com.wesrable.positioning.fingerprint.SurveyStore
 import com.wesrable.positioning.model.Anchor
 import com.wesrable.positioning.model.BarometricReading
 import com.wesrable.positioning.model.BleSignal
@@ -18,6 +20,8 @@ import com.wesrable.positioning.model.RoomAnchor
 import com.wesrable.positioning.model.RoomEstimate
 import com.wesrable.positioning.model.RttMeasurement
 import com.wesrable.positioning.model.StoredMap
+import com.wesrable.positioning.model.SurveyReport
+import com.wesrable.positioning.model.SurveyReportStatus
 import com.wesrable.positioning.model.WifiSignal
 import com.wesrable.positioning.positioning.PositioningEngine
 import com.wesrable.positioning.scan.BleScanner
@@ -28,6 +32,7 @@ import com.wesrable.positioning.sensors.MagnetometerSensor
 import com.wesrable.positioning.sensors.OrientationSensor
 import com.wesrable.positioning.sensors.StepDetector
 import com.wesrable.positioning.sensors.StrideCalibration
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -37,6 +42,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class UiState(
     val orientation: Orientation = Orientation(),
@@ -73,6 +79,10 @@ data class UiState(
     val rttRespondersInRange: Int = 0,
     val rttAccessPointsInRange: Int = 0,
     val uwbSupportedByDevice: Boolean = false,
+    val surveying: Boolean = false,
+    val surveyPointCount: Int = 0,
+    val surveyReport: SurveyReport = SurveyReport(SurveyReportStatus.NOT_ENOUGH_POINTS),
+    val surveyReportRunning: Boolean = false,
     val isSensing: Boolean = false,
 )
 
@@ -96,6 +106,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val engine = PositioningEngine()
     private val fingerprintStore = FingerprintStore(application)
     private val mapStore = MapStore(application)
+    private val surveyStore = SurveyStore(application)
     private val strideCalibration = StrideCalibration(application)
 
     /** Populated via a one-time site calibration; empty by default because
@@ -109,9 +120,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private val loadedMap = mapStore.load().also { engine.loadMap(it) }
 
+    /**
+     * Surveys from earlier walks. Adopted the same way the map is, and for a
+     * sharper reason: the report refuses to compare samples taken within
+     * seconds of each other, so a survey walked in one sitting yields far
+     * fewer usable pairs than the same route walked again another day.
+     */
+    private val loadedSurvey = surveyStore.load().also { engine.loadSurvey(it) }
+
     private val _uiState = MutableStateFlow(
         UiState(
             savedRooms = fingerprintStore.labelCounts(),
+            surveyPointCount = loadedSurvey.size,
             storedTrail = loadedMap.trail,
             relocalizationState = engine.relocalizationState,
             storedWaypointCount = loadedMap.waypoints.size,
@@ -219,7 +239,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sensingJobs.forEach { it.cancel() }
         sensingJobs = emptyList()
         saveMap()
+        saveSurvey()
         _uiState.update { it.copy(isSensing = false) }
+    }
+
+    /**
+     * Starts or stops capturing a dense survey sample every half-metre.
+     *
+     * Stopping persists immediately rather than waiting for the session to
+     * end, because the walk that was just taken is the whole asset — losing it
+     * to a swipe-away would cost the user another lap of the house.
+     */
+    fun setSurveying(enabled: Boolean) {
+        engine.surveying = enabled
+        if (!enabled) saveSurvey()
+        _uiState.update {
+            it.copy(surveying = enabled, surveyPointCount = engine.surveyPoints.size)
+        }
+    }
+
+    /**
+     * Scores the survey: leave-one-out cross-validation plus the resolution
+     * curve. Run on [Dispatchers.Default] because it compares every pair of
+     * samples, which at the survey cap is over 700,000 comparisons — a couple
+     * of seconds of solid arithmetic, and nothing the main thread should be
+     * doing.
+     */
+    fun runSurveyReport() {
+        if (_uiState.value.surveyReportRunning) return
+        val points = engine.surveyPoints
+        _uiState.update { it.copy(surveyReportRunning = true) }
+        viewModelScope.launch {
+            val report = withContext(Dispatchers.Default) {
+                FingerprintCrossValidation.report(points)
+            }
+            _uiState.update { it.copy(surveyReport = report, surveyReportRunning = false) }
+        }
+    }
+
+    fun clearSurvey() {
+        engine.clearSurvey()
+        surveyStore.clear()
+        _uiState.update {
+            it.copy(
+                surveyPointCount = 0,
+                surveyReport = SurveyReport(SurveyReportStatus.NOT_ENOUGH_POINTS),
+            )
+        }
+    }
+
+    private fun saveSurvey() {
+        runCatching { surveyStore.save(engine.exportSurvey()) }
     }
 
     /**
@@ -395,6 +465,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 magneticMagnitudeUt = latestMagneticMagnitudeUt,
                 roomEstimate = roomEstimate,
                 roomAnchors = engine.roomAnchors,
+                surveyPointCount = engine.surveyPoints.size,
             )
         }
     }

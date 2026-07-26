@@ -54,38 +54,72 @@ object FingerprintMatcher {
     }
 
     /**
-     * Weighted mean over whichever comparisons can actually be made, rather
-     * than their sum. Summing works for ranking — every candidate is compared
-     * against the same live snapshot — but leaves the result on a scale that
-     * silently changes with how many signal types happen to be available, so
-     * no fixed number means anything absolute. Averaging keeps the figure
-     * comparable, which is what lets [RoomEstimate.nearestDistanceDb] be
-     * tested against a threshold to decide whether the walker is near any
-     * mapped room at all.
+     * A fingerprint recorded on a device with no working magnetometer stores
+     * 0 uT, which is not a field strength any point on Earth has — Earth's is
+     * 25-65 uT. Treated as "unknown" rather than compared, so such a sample is
+     * not handed a ~50 uT penalty against every live reading.
      */
     private fun distance(
         liveWifi: Map<String, Int>,
         liveBle: Map<String, Int>,
         liveMagnetic: Float?,
         fingerprint: Fingerprint,
-    ): Double {
+    ): Double = signalDistance(
+        wifiA = liveWifi,
+        bleA = liveBle,
+        magneticA = liveMagnetic,
+        wifiB = fingerprint.wifiRssi,
+        bleB = fingerprint.bleRssi,
+        magneticB = fingerprint.magneticMagnitudeUt.takeIf { it != 0f },
+    ) ?: Double.MAX_VALUE
+
+    /**
+     * How unalike two signal signatures are: a weighted mean over whichever
+     * comparisons can actually be made, rather than their sum. Summing works
+     * for ranking — every candidate is compared against the same live snapshot
+     * — but leaves the result on a scale that silently changes with how many
+     * signal types happen to be available, so no fixed number means anything
+     * absolute. Averaging keeps the figure comparable, which is what lets
+     * [RoomEstimate.nearestDistanceDb] be tested against a threshold to decide
+     * whether the walker is near any mapped room at all.
+     *
+     * Null when the two have no signal type in common and there is genuinely
+     * nothing to compare — distinct from "compared, and found identical".
+     *
+     * Set [skipWifi] when the two signatures are known to have come from the
+     * same underlying WiFi scan. Android throttles scans to roughly one per
+     * 30 s, so samples taken half a metre apart routinely carry byte-identical
+     * WiFi readings; counting that as evidence they are the same place would
+     * be measuring the throttle, not the building.
+     */
+    fun signalDistance(
+        wifiA: Map<String, Int>,
+        bleA: Map<String, Int>,
+        magneticA: Float?,
+        wifiB: Map<String, Int>,
+        bleB: Map<String, Int>,
+        magneticB: Float?,
+        skipWifi: Boolean = false,
+    ): Double? {
         var weighted = 0.0
         var totalWeight = 0.0
 
-        rssiMapDistance(liveWifi, fingerprint.wifiRssi)?.let {
+        if (!skipWifi) {
+            rssiMapDistance(wifiA, wifiB)?.let {
+                weighted += RSSI_WEIGHT * it
+                totalWeight += RSSI_WEIGHT
+            }
+        }
+        rssiMapDistance(bleA, bleB)?.let {
             weighted += RSSI_WEIGHT * it
             totalWeight += RSSI_WEIGHT
         }
-        rssiMapDistance(liveBle, fingerprint.bleRssi)?.let {
-            weighted += RSSI_WEIGHT * it
-            totalWeight += RSSI_WEIGHT
-        }
-        if (liveMagnetic != null) {
-            weighted += MAGNETIC_WEIGHT * abs(liveMagnetic - fingerprint.magneticMagnitudeUt)
+        if (magneticA != null && magneticB != null) {
+            weighted += MAGNETIC_WEIGHT * abs(magneticA - magneticB)
             totalWeight += MAGNETIC_WEIGHT
         }
 
-        return if (totalWeight == 0.0) Double.MAX_VALUE else weighted / totalWeight
+        return if (totalWeight == 0.0) null else weighted / totalWeight
     }
 
     /**

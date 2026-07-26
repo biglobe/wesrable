@@ -149,6 +149,91 @@ data class TrailWaypoint(
 )
 
 /**
+ * One sample of a *dense survey*: the same signal signature a [Fingerprint]
+ * carries, but recorded automatically every half-metre along the walk and
+ * tagged with the position it was taken at, instead of being named by hand
+ * once per room.
+ *
+ * The point of recording them this densely is measurement rather than
+ * matching. Comparing every pair of these against the physical distance
+ * between them is what turns "how precisely can this house be located by
+ * signal?" from an argument into a number — see `FingerprintCrossValidation`.
+ *
+ * [pathLengthMeters] is kept so that a loop closure can drag these along with
+ * the trail they were recorded on, exactly as it does room anchors; without it
+ * a correction would leave the survey pinned to coordinates the trail no
+ * longer uses.
+ */
+data class SurveyPoint(
+    val xMeters: Double,
+    val yMeters: Double,
+    val pathLengthMeters: Double,
+    val wifiRssi: Map<String, Int>,
+    val bleRssi: Map<String, Int>,
+    val magneticMagnitudeUt: Float?,
+    val recordedAtMillis: Long,
+)
+
+/** How far a survey report got before running out of evidence. */
+enum class SurveyReportStatus {
+    /** Too few samples to say anything. Keep walking. */
+    NOT_ENOUGH_POINTS,
+
+    /**
+     * Plenty of samples, but no place was visited twice far enough apart in
+     * time. Without that there is no measurement of what "the same place twice"
+     * even looks like, so there is nothing to compare a different place against.
+     */
+    NOT_ENOUGH_REVISITS,
+
+    READY,
+}
+
+/**
+ * One band of physical separation in the measured resolution curve:
+ * of all sample pairs that were [lowMeters]-[highMeters] apart, what fraction
+ * looked different enough in signal to be told apart.
+ */
+data class ResolutionBin(
+    val lowMeters: Double,
+    val highMeters: Double,
+    val pairCount: Int,
+    val distinguishedFraction: Double,
+)
+
+/**
+ * What a dense survey of this particular building actually supports —
+ * measured, not assumed.
+ *
+ * [noiseFloorDb] is the signal distance that separates the two questions. It is
+ * taken from pairs of samples recorded at effectively the same spot on
+ * *different passes*, so it is the size of the difference that mere noise,
+ * body position and time of day produce. Any pair that differs by more than
+ * that is counted as distinguished — which by construction makes the
+ * same-place band itself read about 10%, and that is the useful baseline: a
+ * separation band scoring near 10% is indistinguishable from standing still.
+ */
+data class SurveyReport(
+    val status: SurveyReportStatus,
+    val pointCount: Int = 0,
+    val comparedPairCount: Int = 0,
+    val revisitPairCount: Int = 0,
+    val noiseFloorDb: Double = 0.0,
+    /** Leave-one-out: hold out each sample, locate it from the others. */
+    val medianErrorMeters: Double? = null,
+    val p90ErrorMeters: Double? = null,
+    val bins: List<ResolutionBin> = emptyList(),
+    /**
+     * Narrowest separation this survey reliably resolves — the lower edge of
+     * the tightest band that, along with every wider band, is distinguished at
+     * least 90% of the time. Null when even the widest band never gets there.
+     */
+    val resolvedAtMeters: Double? = null,
+    /** Diagonal of the surveyed area, as a sanity check on coverage. */
+    val spanMeters: Double = 0.0,
+)
+
+/**
  * One place in the *persistent* map: a signal signature with coordinates that
  * outlive the session that recorded them.
  *

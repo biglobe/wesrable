@@ -463,6 +463,97 @@ feeds the analyzer a purely vertical signal, whereas real fidgeting is mostly
 lateral and is largely removed by the projection before the analyzer ever
 sees it.
 
+### The dense survey, and measuring what this building actually supports
+
+Every accuracy figure quoted in a positioning paper is a figure about *that*
+building. Signal environments differ enormously — a mall has thirty visible
+access points, a house has eight — so a number borrowed from someone else's
+measurements says very little about yours. The dense survey exists to replace
+that borrowing with a measurement.
+
+Tap **Start survey** and walk. A signal sample is captured automatically every
+half metre (`SurveyTracker.SPACING_METERS`), tagged with the dead-reckoned
+position it was taken at. Half a metre is not arbitrary: cabinets stand 30-60 cm
+apart, so anything coarser could not even in principle produce a pair of samples
+separated by the distance the exercise is about. Sampling by *distance* rather
+than by time is what keeps the survey even — standing still would otherwise
+bury the map under a hundred readings of one spot and bias every statistic
+towards it.
+
+Tap **Run report** and `FingerprintCrossValidation` scores what was collected.
+It reports two things:
+
+- **Where it puts you.** Leave-one-out cross-validation: hold each sample out,
+  locate it from the others using the app's own k-NN matcher, and measure how
+  far off the answer was. Reported as a median and a 90th percentile.
+- **Telling two places apart.** Of the sample pairs that were 1 m apart, how
+  often did their signals differ by more than same-place noise does? And at
+  half a metre, two metres, four?
+
+Three details separate an honest number here from a flattering one, and all
+three were arrived at by watching the analysis get them wrong first:
+
+- **Pairs recorded close together in time are never compared**
+  (`MIN_SEPARATION_MILLIS`, 15 s). Two samples taken four seconds apart share
+  far more than a location: the same bodies in the same doorways, the same
+  interference, the same everything. Scoring against those measures how
+  repeatable one walk is, which is not the question anyone is asking. This is
+  why a survey walked in one sitting reports `NOT_ENOUGH_REVISITS` and asks
+  for a second pass — and why the survey persists between sessions, so the
+  measurement improves every time the house is walked.
+- **Identical WiFi readings are discarded rather than believed.** Android
+  throttles WiFi scans to roughly one per 30 s, so consecutive survey samples
+  routinely carry byte-identical RSSI maps. Counting that as evidence two
+  places are the same would be measuring the scan throttle. The dense survey
+  is therefore carried mostly by BLE and the magnetometer, which do refresh at
+  half-metre spacing.
+- **The threshold for "distinguished" is derived from the data**, not chosen.
+  It is the 90th percentile of the signal distance between samples taken at
+  effectively the same spot on *different passes* — the size of difference
+  that noise alone produces in this building. That fixes the false-alarm rate
+  at about 10% by construction, which is what makes the curve readable: a
+  band scoring near 10% is telling you it is indistinguishable from standing
+  still.
+
+Physical separations come from dead reckoning, which drifts. That matters far
+less than it sounds: drift accumulates over a walk, while every comparison here
+is between two points a few metres apart, over which the relative error is
+small. The bands the whole exercise turns on — half a metre, one metre — are
+exactly the ones dead reckoning gets right.
+
+#### What it does on synthetic homes
+
+The analysis was checked against simulated buildings whose true resolution is
+known, because a metric that reports a confident figure for random noise is
+worse than no metric. Six controls, 380-760 samples each:
+
+| Case | Median error | Resolved at | 0.5-1 m band |
+|---|---|---|---|
+| Signals carry **no** location information | 4.06 m | nothing | 12% |
+| Clean signals, almost no noise | 0.13 m | 1.0 m | 64% |
+| Realistic: 3 dB noise, 3 dB pass shadowing, 1 m DR drift | 1.42 m | nothing | 24% |
+| Sparse: 3 access points, no BLE | 2.54 m | nothing | 6% |
+| Small flat, clean signals, nothing ever 8 m apart | 0.14 m | 1.0 m | 50% |
+| Single pass, no revisits | — | refuses | — |
+
+The first row is the one that matters most. Signals with no spatial structure
+produce a flat curve pinned at 9-12% across every separation band, and the
+report declines to claim any resolution — the metric is not fooled by noise.
+The last row is the second: one pass is refused outright rather than scored
+against itself.
+
+Two bugs surfaced from these runs. `resolvedAt` originally stopped at any band
+with too few pairs, which meant a small flat — where nothing is ever 8 m apart —
+reported that it resolved nothing, purely for being small; an empty widest band
+is absent evidence, not contrary evidence. And the shortfall message originally
+collapsed "there is real structure here, just not reliable enough" into "this
+building has too few distinct signals to fingerprint at all", which would have
+told a user with a perfectly fixable survey to give up.
+
+Cost at the survey cap of 1200 samples (over 700,000 pairs) is a few hundred
+milliseconds on a desktop JVM, which is why the report runs on
+`Dispatchers.Default` rather than the main thread.
+
 ## Project layout
 
 ```
@@ -472,9 +563,10 @@ app/src/main/java/com/wesrable/positioning/
   sensors/          OrientationSensor, BarometerSensor, MagnetometerSensor, StepDetector
   scan/             WifiScanner, BleScanner, BleAdvertisementParser
   positioning/       RssiDistance, Trilateration, DeadReckoningTracker, RoomAnchorMap,
-                     MagneticSequenceMatcher, Relocalizer,
+                     MagneticSequenceMatcher, Relocalizer, SurveyTracker,
                      LoopClosureTracker, PositioningEngine
-  fingerprint/      FingerprintStore, FingerprintMatcher, MapStore
+  fingerprint/      FingerprintStore, FingerprintMatcher, FingerprintCrossValidation,
+                     MapStore, SurveyStore
   ui/               Jetpack Compose screens
   MainActivity.kt, MainViewModel.kt
 ```

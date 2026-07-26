@@ -9,6 +9,7 @@ import com.wesrable.positioning.model.RelocalizationState
 import com.wesrable.positioning.model.RoomAnchor
 import com.wesrable.positioning.model.RoomEstimate
 import com.wesrable.positioning.model.StoredMap
+import com.wesrable.positioning.model.SurveyPoint
 import com.wesrable.positioning.model.WifiSignal
 
 /**
@@ -27,6 +28,7 @@ class PositioningEngine(
     private val loopClosure: LoopClosureTracker = LoopClosureTracker(),
     private val roomAnchorMap: RoomAnchorMap = RoomAnchorMap(),
     private val magneticSequences: MagneticSequenceMatcher = MagneticSequenceMatcher(),
+    private val survey: SurveyTracker = SurveyTracker(),
 ) {
 
     /**
@@ -124,6 +126,33 @@ class PositioningEngine(
     val roomAnchors: List<RoomAnchor> get() = roomAnchorMap.anchors
 
     /**
+     * Whether to capture a dense survey sample every half-metre walked. Off by
+     * default: it is a measurement exercise the user starts deliberately, not
+     * something to run behind their back.
+     */
+    var surveying: Boolean = false
+
+    /** Every survey sample, from this walk and from remembered ones. */
+    val surveyPoints: List<SurveyPoint> get() = survey.points
+
+    val sessionSurveyPointCount: Int get() = survey.sessionPointCount
+
+    fun loadSurvey(points: List<SurveyPoint>) = survey.load(points)
+
+    fun clearSurvey() = survey.clear()
+
+    /**
+     * The survey to persist. An unlocated session's coordinates are relative
+     * to an origin nothing can find again, so its samples would be scattered
+     * into the stored survey at meaningless positions and quietly wreck every
+     * figure the report produces — the same reason [exportMap] holds back.
+     */
+    fun exportSurvey(): List<SurveyPoint> = when (relocalizationState) {
+        RelocalizationState.SEARCHING -> survey.storedPoints
+        else -> survey.points
+    }
+
+    /**
      * Marks the exact spot a fingerprint was just recorded at. This beats
      * anything [noteRoomMatch] can infer, since the position is simply known
      * rather than derived from a noisy signal match.
@@ -190,6 +219,7 @@ class PositioningEngine(
                 loopClosure.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
                 roomAnchorMap.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
                 magneticSequences.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
+                survey.translate(fix.offsetEastMeters, fix.offsetNorthMeters)
                 relocalizationState = RelocalizationState.LOCATED
                 relocalizationUncertaintyMeters = fix.uncertaintyMeters
             }
@@ -222,10 +252,29 @@ class PositioningEngine(
             bleRssi = bleRssi,
             magneticMagnitudeUt = magneticMagnitudeUt,
             wifiScanGeneration = wifiScanGeneration,
-        ) ?: return
+        )
 
-        applyClosure(closure)
-        closureCount++
+        if (closure != null) {
+            applyClosure(closure)
+            closureCount++
+        }
+
+        // Captured last, and re-reading the position rather than reusing
+        // `current`: a closure applied a moment ago may have moved the walker,
+        // and a survey sample filed at a coordinate the trail has already
+        // abandoned would be measured against the wrong separation forever.
+        if (surveying) {
+            val here = deadReckoning.currentPosition()
+            survey.observe(
+                xMeters = here.xMeters,
+                yMeters = here.yMeters,
+                pathLengthMeters = deadReckoning.pathLengthMeters,
+                wifiRssi = wifiRssi,
+                bleRssi = bleRssi,
+                magneticMagnitudeUt = magneticMagnitudeUt,
+                atMillis = System.currentTimeMillis(),
+            )
+        }
     }
 
     /**

@@ -22,6 +22,7 @@ import com.wesrable.positioning.ui.components.PositionCard
 import com.wesrable.positioning.ui.components.RoomFingerprintCard
 import com.wesrable.positioning.ui.components.RttCard
 import com.wesrable.positioning.ui.components.StrideCalibrationCard
+import com.wesrable.positioning.ui.components.SurveyCard
 import com.wesrable.positioning.ui.components.WifiListCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,6 +98,17 @@ fun MainScreen(
                     onRename = { old, new -> viewModel.renameFingerprint(old, new) },
                     onDelete = { label -> viewModel.deleteFingerprint(label) },
                     onClear = { viewModel.clearFingerprints() },
+                )
+            }
+            item {
+                SurveyCard(
+                    surveying = state.surveying,
+                    pointCount = state.surveyPointCount,
+                    report = state.surveyReport,
+                    reportRunning = state.surveyReportRunning,
+                    onSetSurveying = { viewModel.setSurveying(it) },
+                    onRunReport = { viewModel.runSurveyReport() },
+                    onClear = { viewModel.clearSurvey() },
                 )
             }
             item {
