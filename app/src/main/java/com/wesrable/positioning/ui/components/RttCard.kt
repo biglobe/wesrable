@@ -116,10 +116,10 @@ fun RttCard(
                 )
                 if (characteristics.isNotEmpty()) {
                     Text(
-                        "Radio reports: " + characteristics.entries
-                            .sortedBy { it.key }
+                        "Radio reports: " + shortenKeys(characteristics)
+                            .entries.sortedBy { it.key }
                             .joinToString("  ") { (key, on) ->
-                                "${key.substringAfterLast('_')}=${if (on) "yes" else "no"}"
+                                "$key=${if (on) "yes" else "no"}"
                             },
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
@@ -295,6 +295,26 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
             modifier = Modifier.padding(top = 4.dp),
         )
     }
+}
+
+/**
+ * Drops the prefix every capability key shares, and nothing else.
+ *
+ * A first attempt kept only the text after the last underscore, which turned
+ * `ntb_initiator` into "initiator" — indistinguishable from the one-sided-RTT
+ * initiator — and rendered two separate flags as an identical "supported".
+ * Names exist to be told apart, and abbreviating them until they collide is
+ * worse than printing them in full.
+ */
+private fun shortenKeys(characteristics: Map<String, Boolean>): Map<String, Boolean> {
+    if (characteristics.size < 2) return characteristics
+    val keys = characteristics.keys.toList()
+    var shared = 0
+    val shortest = keys.minOf { it.length }
+    while (shared < shortest && keys.all { it[shared] == keys[0][shared] }) shared++
+    // Only trim on a separator, so a shared prefix does not cut mid-word.
+    val cut = keys[0].take(shared).lastIndexOf('_') + 1
+    return characteristics.mapKeys { (key, _) -> key.drop(cut) }
 }
 
 /** Enough to see the pattern without turning the card into a scrolling log. */

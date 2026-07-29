@@ -127,7 +127,12 @@ class RttRanger(private val context: Context) {
      */
     val isAzInitiatorSupported: Boolean
         get() = rttCharacteristics().any { (key, enabled) ->
-            enabled && key.contains("NTB", ignoreCase = true)
+            // Both terms, not just "NTB": a phone may be able to *answer* an
+            // 802.11az exchange without being able to start one, and the
+            // characteristics bundle exposes those separately. Matching NTB
+            // alone would read an ntb_responder flag as initiator support.
+            enabled && key.contains("NTB", ignoreCase = true) &&
+                key.contains("INITIATOR", ignoreCase = true)
         }
 
     /** Whether it is switched on right now (the user can disable it system-wide). */
