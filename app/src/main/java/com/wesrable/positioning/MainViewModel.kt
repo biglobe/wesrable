@@ -22,6 +22,7 @@ import com.wesrable.positioning.model.RelocalizationState
 import com.wesrable.positioning.model.RoomAnchor
 import com.wesrable.positioning.model.RoomEstimate
 import com.wesrable.positioning.model.RttMeasurement
+import com.wesrable.positioning.model.RttProbe
 import com.wesrable.positioning.model.StoredMap
 import com.wesrable.positioning.model.SurveyReport
 import com.wesrable.positioning.model.SurveyReportStatus
@@ -82,6 +83,9 @@ data class UiState(
     val rttRespondersInRange: Int = 0,
     val rttAccessPointsInRange: Int = 0,
     val uwbSupportedByDevice: Boolean = false,
+    val rttProbes: List<RttProbe> = emptyList(),
+    val rttProbing: Boolean = false,
+    val rttProbeRun: Boolean = false,
     val surveying: Boolean = false,
     val surveyPointCount: Int = 0,
     val surveyReport: SurveyReport = SurveyReport(SurveyReportStatus.NOT_ENOUGH_POINTS),
@@ -293,6 +297,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 FingerprintCrossValidation.report(points)
             }
             _uiState.update { it.copy(surveyReport = report, surveyReportRunning = false) }
+        }
+    }
+
+    /**
+     * Asks every visible access point to range, rather than trusting the
+     * capability bit each one advertises. Deliberately a button and not part of
+     * the continuous loop: ranging costs power, the platform rate-limits it,
+     * and this is a question about the building that only needs asking once.
+     */
+    fun probeRtt() {
+        if (_uiState.value.rttProbing) return
+        _uiState.update { it.copy(rttProbing = true) }
+        viewModelScope.launch {
+            val probes = runCatching { rttRanger.probeAll() }.getOrDefault(emptyList())
+            _uiState.update {
+                it.copy(rttProbes = probes, rttProbing = false, rttProbeRun = true)
+            }
         }
     }
 

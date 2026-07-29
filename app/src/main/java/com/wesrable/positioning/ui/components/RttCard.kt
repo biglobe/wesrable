@@ -3,13 +3,19 @@ package com.wesrable.positioning.ui.components
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.wesrable.positioning.model.RttMeasurement
+import com.wesrable.positioning.model.RttProbe
+import com.wesrable.positioning.model.RttProbeStatus
 
 /**
  * Time-of-flight ranging, and — just as important — a plain statement of
@@ -23,6 +29,10 @@ fun RttCard(
     respondersInRange: Int,
     accessPointsInRange: Int,
     uwbSupportedByDevice: Boolean,
+    probes: List<RttProbe>,
+    probing: Boolean,
+    probeRun: Boolean,
+    onProbe: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -79,6 +89,27 @@ fun RttCard(
                 }
             }
 
+            if (supportedByDevice) {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Text("Ask them directly", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "The count above comes from a capability bit each access point sets " +
+                        "in its beacon, and that bit is unreliable — plenty of routers " +
+                        "will answer a ranging request without ever advertising that they " +
+                        "can, and Android does not always surface the flag from a passive " +
+                        "scan. This asks every access point in range outright, which is " +
+                        "the only way to actually know.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Button(onClick = onProbe, enabled = !probing, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(if (probing) "Probing…" else "Probe every access point")
+                }
+                if (probing) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+                }
+                ProbeResults(probes, probeRun, probing)
+            }
+
             Text(
                 if (uwbSupportedByDevice) {
                     "This phone also has ultra-wideband. UWB ranges to 10-30 cm rather " +
@@ -94,3 +125,89 @@ fun RttCard(
         }
     }
 }
+
+/**
+ * The probe table. Ranged access points come first because one of them changes
+ * everything: three with known positions locate the phone outright, with no
+ * dead reckoning and no fingerprinting involved.
+ */
+@Composable
+private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boolean) {
+    if (probing) return
+    if (!probeRun) return
+
+    if (probes.isEmpty()) {
+        Text(
+            "No access points were visible to probe. WiFi scanning may be off, or " +
+                "location permission withheld.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        return
+    }
+
+    val ranged = probes.count { it.status == RttProbeStatus.RANGED }
+    val refused = probes.count { it.status == RttProbeStatus.NOT_SUPPORTED }
+    val failed = probes.count { it.status == RttProbeStatus.FAILED }
+
+    Text(
+        when {
+            ranged >= 3 -> "$ranged access points answered. That is enough to trilaterate " +
+                "outright — measure where those three are and positioning stops depending " +
+                "on dead reckoning at all."
+            ranged > 0 -> "$ranged access point${if (ranged == 1) "" else "s"} answered. " +
+                "Not enough to trilaterate on its own, but it proves the path works here — " +
+                "one more capable router would make this the sharpest signal in the app."
+            else -> "$refused refused outright and $failed failed to answer. No ranging " +
+                "is available in this building, and now that is measured rather than " +
+                "inferred from a beacon flag."
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+
+    probes.take(MAX_PROBE_ROWS).forEach { probe ->
+        Text(
+            "%-16s %4d dBm  %-13s %s".format(
+                probe.ssid.take(16),
+                probe.rssiDbm,
+                when (probe.status) {
+                    RttProbeStatus.RANGED -> "RANGED"
+                    RttProbeStatus.NOT_SUPPORTED -> "refused"
+                    RttProbeStatus.FAILED -> "no answer"
+                },
+                probe.distanceMeters?.let { "%.2f m".format(it) }
+                    ?: if (probe.advertisedResponder) "(advertised 11mc)" else "",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+
+    val advertisedButSilent = probes.count {
+        it.advertisedResponder && it.status != RttProbeStatus.RANGED
+    }
+    val silentButRanged = probes.count {
+        !it.advertisedResponder && it.status == RttProbeStatus.RANGED
+    }
+    if (silentButRanged > 0 || advertisedButSilent > 0) {
+        Text(
+            buildString {
+                if (silentButRanged > 0) {
+                    append("$silentButRanged access point")
+                    append(if (silentButRanged == 1) " ranged" else "s ranged")
+                    append(" without advertising support — exactly the case the old ")
+                    append("responder count was missing. ")
+                }
+                if (advertisedButSilent > 0) {
+                    append("$advertisedButSilent advertised support but did not answer.")
+                }
+            },
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/** Enough to see the pattern without turning the card into a scrolling log. */
+private const val MAX_PROBE_ROWS = 12

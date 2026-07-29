@@ -711,6 +711,39 @@ is requested at the feature rather than at launch, so declining it costs only
 this card. The app still holds no `INTERNET` permission, so a frame has nowhere
 to go even in principle.
 
+### Asking the access points instead of believing them
+
+The RTT card originally reported "0 of N visible access points answer ranging
+requests", and that sentence was doing more work than the code behind it could
+support. It counted access points whose scan result had `is80211mcResponder()`
+set — a capability bit the access point puts in its beacon. That bit is not
+reliable evidence: some vendors never set it, some set it only on the 5 GHz
+radio, and Android does not always surface it from a passive scan. A building
+can therefore report no responders while containing a router that would have
+ranged perfectly well.
+
+**Probe every access point** asks them outright. Since API 31 the platform
+provides exactly the call for this — `addNon80211mcCapableAccessPoint`, which
+submits an access point that did not advertise support — so every visible
+access point can be sent a real ranging request, strongest first, in batches of
+`RangingRequest.getMaxPeers()`. Three outcomes are distinguished, and the
+distinction is the whole point:
+
+- **RANGED** — it answered with a distance. A definite yes, whatever its beacon
+  claimed.
+- **refused** — it replied `STATUS_RESPONDER_DOES_NOT_SUPPORT_IEEE80211MC`. A
+  definite no.
+- **no answer** — the request failed without a verdict: out of range mid-request,
+  busy, or the radio declined. Worth retrying before concluding anything.
+
+The card then calls out the two disagreements between claim and reality: access
+points that ranged without advertising support (the case the old count missed
+entirely) and ones that advertised it but stayed silent.
+
+This is a button rather than part of the 2 s ranging loop. Ranging costs power
+and the platform rate-limits it, and "does this building support RTT" is a
+question that needs asking once, not twice a second.
+
 ## Project layout
 
 ```

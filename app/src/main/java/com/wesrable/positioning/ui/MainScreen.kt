@@ -151,6 +151,10 @@ fun MainScreen(
                     respondersInRange = state.rttRespondersInRange,
                     accessPointsInRange = state.rttAccessPointsInRange,
                     uwbSupportedByDevice = state.uwbSupportedByDevice,
+                    probes = state.rttProbes,
+                    probing = state.rttProbing,
+                    probeRun = state.rttProbeRun,
+                    onProbe = { viewModel.probeRtt() },
                 )
             }
             item {

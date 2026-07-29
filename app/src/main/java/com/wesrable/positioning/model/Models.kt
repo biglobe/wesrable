@@ -49,6 +49,43 @@ data class RttMeasurement(
     val successfulMeasurements: Int,
 )
 
+/** What happened when one access point was actually asked to range. */
+enum class RttProbeStatus {
+    /** It answered with a distance. This is the one that matters. */
+    RANGED,
+
+    /** It replied that it cannot do 802.11mc ranging. A definite no. */
+    NOT_SUPPORTED,
+
+    /**
+     * The request failed without a clear answer — out of range mid-request,
+     * busy, or the radio declined. Not the same as a refusal, and worth
+     * retrying before concluding anything.
+     */
+    FAILED,
+}
+
+/**
+ * The result of asking one access point to range, rather than of reading what
+ * it advertises.
+ *
+ * The distinction is the point. An access point announces 802.11mc support in a
+ * capability bit, and the app previously trusted that bit alone — but the bit is
+ * frequently unset on hardware that will happily answer a ranging request, and
+ * occasionally set on hardware that will not. The only reliable way to find out
+ * is to ask.
+ */
+data class RttProbe(
+    val bssid: String,
+    val ssid: String,
+    val rssiDbm: Int,
+    /** What the access point claimed in its beacon, before being asked. */
+    val advertisedResponder: Boolean,
+    val status: RttProbeStatus,
+    val distanceMeters: Double? = null,
+    val standardDeviationMeters: Double? = null,
+)
+
 /** A reference point (AP or beacon) whose real-world coordinates are known via calibration. */
 data class Anchor(
     val id: String,
