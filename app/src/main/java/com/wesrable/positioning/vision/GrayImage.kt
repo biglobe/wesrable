@@ -19,6 +19,50 @@ class GrayImage(
 
     operator fun get(x: Int, y: Int): Int = pixels[y * width + x].toInt() and 0xFF
 
+    /**
+     * Box-blurred copy, via an integral image so the cost does not depend on
+     * the radius.
+     *
+     * Descriptors must be sampled from this rather than from the raw frame.
+     * A BRIEF bit records which of two pixels is brighter, and where the two
+     * are genuinely equal — a flat wall, a plain cabinet door — that comparison
+     * is decided by sensor noise, so the bit becomes a coin flip that lands
+     * differently every frame. Measured on a synthetic room, sampling raw made
+     * two renders of *the same view* match on 2 keypoints out of 31; the
+     * information was there, drowned in per-pixel noise. Averaging over a small
+     * neighbourhood first suppresses that noise while leaving real brightness
+     * differences intact.
+     */
+    fun boxBlurred(radius: Int): GrayImage {
+        if (radius <= 0) return this
+        val integral = IntArray((width + 1) * (height + 1))
+        for (y in 0 until height) {
+            var rowSum = 0
+            for (x in 0 until width) {
+                rowSum += this[x, y]
+                integral[(y + 1) * (width + 1) + (x + 1)] =
+                    integral[y * (width + 1) + (x + 1)] + rowSum
+            }
+        }
+
+        val out = ByteArray(width * height)
+        for (y in 0 until height) {
+            val top = (y - radius).coerceAtLeast(0)
+            val bottom = (y + radius).coerceAtMost(height - 1)
+            for (x in 0 until width) {
+                val left = (x - radius).coerceAtLeast(0)
+                val right = (x + radius).coerceAtMost(width - 1)
+                val area = (right - left + 1) * (bottom - top + 1)
+                val sum = integral[(bottom + 1) * (width + 1) + (right + 1)] -
+                    integral[top * (width + 1) + (right + 1)] -
+                    integral[(bottom + 1) * (width + 1) + left] +
+                    integral[top * (width + 1) + left]
+                out[y * width + x] = (sum / area).toByte()
+            }
+        }
+        return GrayImage(width, height, out)
+    }
+
     /** Bilinear sample, for reading a marker cell that falls between pixels. */
     fun sampleAt(x: Double, y: Double): Int {
         val clampedX = x.coerceIn(0.0, (width - 1).toDouble())

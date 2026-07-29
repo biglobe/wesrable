@@ -761,6 +761,56 @@ This is a button rather than part of the 2 s ranging loop. Ranging costs power
 and the platform rate-limits it, and "does this building support RTT" is a
 question that needs asking once, not twice a second.
 
+### Place recognition without markers — built, unvalidated
+
+`vision/FastCorners.kt`, `BriefDescriptor.kt` and `SceneMatcher.kt` implement
+visual place recognition: find corners, describe each by 256 brightness
+comparisons around it, match by counting differing bits, keep only matches that
+clearly beat their runner-up, and require the survivors to displace consistently
+with one another. The intent was to identify a cabinet from its *surroundings* —
+the wall beside it, the window, the neighbouring furniture — with nothing
+printed and nothing stuck to anything.
+
+**It is not wired into the app, and it should not be until it is tested against
+real photographs.** Three things were established:
+
+- FAST finds real corners. On a dark square it returns exactly four keypoints,
+  at the four corners. Two bugs were found getting there: the four-compass-point
+  pre-test was using FAST-12's three-of-four rule, which rejected *every* corner
+  in every image, and the absence of non-maximum suppression meant each corner
+  produced a cluster of near-identical keypoints — which destroys matching
+  rather than merely wasting time, since a query point's best and second-best
+  match become the same physical corner and the ratio test discards it.
+- Descriptors survive what a phone does to a photograph, but only after
+  smoothing before sampling. A BRIEF bit compares two pixels, and where they are
+  genuinely equal the comparison is decided by sensor noise; two renders of one
+  view matched on 2 keypoints out of 31 until a box blur was added, and 155
+  afterwards. Lighting changed 30% and heavy sensor noise both leave 60-104
+  agreeing matches.
+- A different room is now rejected 12 times out of 12, after replacing an
+  absolute inlier count with a ratio.
+
+**What is not established is the thing that matters:** whether two viewpoints
+40 cm apart can be told apart. The synthetic-room harness that served the rest
+of this project well proved untrustworthy here, in four separate ways, each of
+which produced a confidently wrong conclusion before being caught:
+
+1. Perfectly flat surfaces, which do not occur outside a renderer, made
+   descriptors look useless.
+2. Texture keyed to *image* coordinates rather than to the wall, so every view
+   contained the identical pattern however the camera moved — every view matched
+   every other, including a different room, 12 times out of 12.
+3. A "wallpaper" sinusoid repeating every 11 cm, which makes positions 40 cm
+   apart genuinely alike, so the retrieval failure it reported was a property of
+   the wallpaper rather than of the method.
+4. Roll rendered by rotating object *positions* while drawing the objects
+   axis-aligned, so the local image content never rotates and the descriptor's
+   rotation compensation cannot be exercised at all.
+
+Scene statistics are the entire question for this technique, and inventing them
+is not a test. Answering it needs photographs of the actual cabinets — the same
+leave-one-out cross-validation the dense survey uses, run over captured views.
+
 ## Project layout
 
 ```
@@ -771,7 +821,8 @@ app/src/main/java/com/wesrable/positioning/
   scan/             WifiScanner, BleScanner, BleAdvertisementParser, RttRanger,
                      MarkerAnalyzer
   vision/           MarkerDictionary, AdaptiveThreshold, ContourTracer, QuadFitter,
-                     Homography, MarkerDecoder, MarkerDetector
+                     Homography, MarkerDecoder, MarkerDetector,
+                     FastCorners, BriefDescriptor, SceneMatcher (unwired)
   positioning/       RssiDistance, Trilateration, DeadReckoningTracker, RoomAnchorMap,
                      MagneticSequenceMatcher, Relocalizer, SurveyTracker,
                      LoopClosureTracker, PositioningEngine
