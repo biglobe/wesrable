@@ -177,7 +177,22 @@ class RttRanger(private val context: Context) {
         visible.chunked(RangingRequest.getMaxPeers().coerceAtLeast(1)).forEach { batch ->
             results += probeBatch(manager, batch)
         }
-        return results.sortedWith(
+        // A request that fails takes its whole batch down with it, so an access
+        // point that would have answered can be recorded as silent purely for
+        // travelling in bad company. Anything that gave no answer is asked
+        // again on its own, where nothing else can spoil it. Refusals are not
+        // retried — those were a real reply.
+        val byBssid = results.associateBy { it.bssid }.toMutableMap()
+        results.filter { it.status == RttProbeStatus.FAILED }
+            .sortedByDescending { it.rssiDbm }
+            .take(MAX_SOLO_RETRIES)
+            .forEach { silent ->
+                val scan = visible.firstOrNull { it.BSSID == silent.bssid } ?: return@forEach
+                val retried = probeBatch(manager, listOf(scan)).firstOrNull() ?: return@forEach
+                if (retried.status != RttProbeStatus.FAILED) byBssid[silent.bssid] = retried
+            }
+
+        return byBssid.values.sortedWith(
             compareBy({ it.status.ordinal }, { -it.rssiDbm })
         )
     }
@@ -230,6 +245,7 @@ class RttRanger(private val context: Context) {
                 bssid = bssid,
                 ssid = scan.SSID.orEmpty().ifBlank { "(hidden)" },
                 rssiDbm = scan.level,
+                frequencyMhz = scan.frequency,
                 advertisedResponder = advertised[bssid] == true,
                 advertisedAzResponder = advertisedAz[bssid] == true,
                 rangedVia80211az = measurement?.is80211az == true,
@@ -416,5 +432,12 @@ class RttRanger(private val context: Context) {
          * in the top of the list is too weak to trilaterate from anyway.
          */
         const val DEFAULT_PROBE_LIMIT = 24
+
+        /**
+         * Silent access points re-asked one at a time. Capped because each is a
+         * separate rate-limited request; the strongest are retried first, since
+         * a router in the same building is what this is for.
+         */
+        const val MAX_SOLO_RETRIES = 10
     }
 }

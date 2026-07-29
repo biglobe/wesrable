@@ -219,9 +219,10 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
 
     probes.take(MAX_PROBE_ROWS).forEach { probe ->
         Text(
-            "%-16s %4d dBm  %-13s %s".format(
+            "%-16s %4d dBm %-3s %-13s %s".format(
                 probe.ssid.take(16),
                 probe.rssiDbm,
+                bandOf(probe.frequencyMhz),
                 when (probe.status) {
                     RttProbeStatus.RANGED -> if (probe.rangedVia80211az) "RANGED az" else "RANGED mc"
                     RttProbeStatus.NO_DISTANCE -> "no distance"
@@ -295,6 +296,19 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
             modifier = Modifier.padding(top = 4.dp),
         )
     }
+}
+
+/**
+ * Which radio an access point is on. FTM is often enabled on a router's 5 or
+ * 6 GHz radio and not its 2.4 GHz one, so the same box can answer under one
+ * SSID and stay silent under another — and without the band that reads as an
+ * inconsistent router rather than a per-radio setting.
+ */
+private fun bandOf(frequencyMhz: Int): String = when {
+    frequencyMhz == 0 -> ""
+    frequencyMhz < 2500 -> "2G"
+    frequencyMhz < 5900 -> "5G"
+    else -> "6G"
 }
 
 /**

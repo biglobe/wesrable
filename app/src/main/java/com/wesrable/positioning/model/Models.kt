@@ -120,6 +120,12 @@ data class RttProbe(
     val bssid: String,
     val ssid: String,
     val rssiDbm: Int,
+    /**
+     * Channel frequency. Worth showing because FTM support is frequently
+     * enabled on a router's 5 GHz radio and not its 2.4 GHz one, so the same
+     * physical box can answer under one SSID and refuse under another.
+     */
+    val frequencyMhz: Int = 0,
     /** What the access point claimed in its beacon, before being asked. */
     val advertisedResponder: Boolean,
     /** The same claim for 802.11az, the successor standard. */
