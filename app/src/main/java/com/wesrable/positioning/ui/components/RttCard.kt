@@ -34,6 +34,7 @@ fun RttCard(
     probeRun: Boolean,
     onProbe: () -> Unit,
     azInitiatorSupported: Boolean,
+    azCapabilityKey: String?,
     characteristics: Map<String, Boolean>,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -103,17 +104,30 @@ fun RttCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    if (azInitiatorSupported) {
-                        "This phone can initiate 802.11az. Any access point that supports it " +
-                            "will range over az rather than mc, and the probe marks which."
-                    } else {
-                        "This phone reports no 802.11az initiator support, so ranging here " +
-                            "can only ever use the older 802.11mc. That is a property of the " +
-                            "phone's WiFi chipset and firmware, not of the building."
+                    when {
+                        azInitiatorSupported ->
+                            "This phone can initiate 802.11az. Any access point that supports " +
+                                "it will range over az rather than mc, and the probe marks which."
+                        azCapabilityKey != null ->
+                            "This phone reports no 802.11az initiator support, so ranging here " +
+                                "can only use the older 802.11mc. That is a property of the " +
+                                "phone's chipset and firmware, not of the building."
+                        else ->
+                            "No 802.11az capability key appears in this radio's bundle at all. " +
+                                "That means the platform does not report az support either way " +
+                                "— not that az is known to be absent. Check the full list below " +
+                                "against the verdict."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                if (azCapabilityKey != null) {
+                    Text(
+                        "Read from: $azCapabilityKey",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
                 if (characteristics.isNotEmpty()) {
                     Text(
                         "Radio reports: " + shortenKeys(characteristics)

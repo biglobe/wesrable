@@ -87,6 +87,7 @@ data class UiState(
     val rttProbing: Boolean = false,
     val rttProbeRun: Boolean = false,
     val azInitiatorSupported: Boolean = false,
+    val azCapabilityKey: String? = null,
     val rttCharacteristics: Map<String, Boolean> = emptyMap(),
     val surveying: Boolean = false,
     val surveyPointCount: Int = 0,
@@ -167,7 +168,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             magnetometerAvailable = magnetometerSensor.isAvailable,
             rttSupportedByDevice = rttRanger.isSupportedByDevice,
             uwbSupportedByDevice = rttRanger.isUwbSupportedByDevice,
-            azInitiatorSupported = rttRanger.isAzInitiatorSupported,
+            azInitiatorSupported = rttRanger.azCapability.supported,
+            azCapabilityKey = rttRanger.azCapability.sourceKey,
             rttCharacteristics = rttRanger.rttCharacteristics(),
         )
     )

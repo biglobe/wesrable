@@ -115,25 +115,49 @@ class RttRanger(private val context: Context) {
     }
 
     /**
-     * Whether this phone can start an 802.11az ranging exchange.
+     * What the capability bundle says about 802.11az, and which key said it.
      *
-     * 802.11az is the successor to 802.11mc: better accuracy, and designed to
-     * scale to many clients at once. It is not a separate call — the platform
-     * negotiates it inside an ordinary ranging request when both ends support
-     * it — so what matters is knowing whether the phone is capable, and then
-     * which standard each measurement actually came from.
+     * The key is carried out alongside the verdict deliberately. Deciding this
+     * means matching key names by substring, and a name that does not match the
+     * expected shape produces a confident "not supported" that is
+     * indistinguishable from a real one. Naming the source turns an unverifiable
+     * boolean into a claim that can be checked against the printed bundle — and
+     * the first version of this feature was reported wrong for exactly that
+     * reason, from truncated labels that had collapsed two distinct keys into
+     * one word.
      *
-     * Matched on the key rather than a constant for the reason above.
+     * [sourceKey] null means no az-related key existed in the bundle at all,
+     * which is itself the answer on a platform too old to report one.
      */
-    val isAzInitiatorSupported: Boolean
-        get() = rttCharacteristics().any { (key, enabled) ->
-            // Both terms, not just "NTB": a phone may be able to *answer* an
-            // 802.11az exchange without being able to start one, and the
-            // characteristics bundle exposes those separately. Matching NTB
-            // alone would read an ntb_responder flag as initiator support.
-            enabled && key.contains("NTB", ignoreCase = true) &&
-                key.contains("INITIATOR", ignoreCase = true)
+    data class AzCapability(val supported: Boolean, val sourceKey: String?)
+
+    /**
+     * 802.11az is the successor to 802.11mc, and needs both ends to take part.
+     * A phone that cannot initiate cannot use it however capable the router is.
+     *
+     * Matching is deliberately broad — any key mentioning `ntb` or `az` counts
+     * as az-related — and a key that also mentions the initiator role is
+     * preferred over one that does not. Requiring the word "initiator" outright
+     * would report a false negative on any platform that names the flag
+     * differently, which is the more damaging error here: it would close off an
+     * avenue that was actually open.
+     */
+    val azCapability: AzCapability
+        get() {
+            val related = rttCharacteristics().filterKeys { key ->
+                key.contains("ntb", ignoreCase = true) || key.contains("az", ignoreCase = true)
+            }
+            if (related.isEmpty()) return AzCapability(supported = false, sourceKey = null)
+
+            val initiator = related.entries.firstOrNull {
+                it.key.contains("initiator", ignoreCase = true)
+            }
+            val chosen = initiator ?: related.entries.first()
+            return AzCapability(supported = chosen.value, sourceKey = chosen.key)
         }
+
+    /** Convenience for the common question. See [azCapability] for the source. */
+    val isAzInitiatorSupported: Boolean get() = azCapability.supported
 
     /** Whether it is switched on right now (the user can disable it system-wide). */
     val isAvailable: Boolean
