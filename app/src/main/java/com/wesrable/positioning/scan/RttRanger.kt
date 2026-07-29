@@ -94,17 +94,15 @@ class RttRanger(private val context: Context) {
      * because the set grows with each platform release and a hardcoded list
      * would silently omit whatever was added last.
      *
-     * Reached by reflection: the app compiles against API 34, and naming the
-     * newer symbols directly would not build while querying them at runtime
-     * works perfectly well on the devices that have them.
+     * Read directly now that the project compiles against API 35; the runtime
+     * version is still checked, since the app installs on far older releases
+     * where none of this exists.
      */
     fun rttCharacteristics(): Map<String, Boolean> {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return emptyMap()
         val manager = rttManager ?: return emptyMap()
-        val bundle = runCatching {
-            WifiRttManager::class.java.getMethod("getRttCharacteristics").invoke(manager)
-                as? android.os.Bundle
-        }.getOrNull() ?: return emptyMap()
+        val bundle = runCatching { manager.rttCharacteristics }.getOrNull()
+            ?: return emptyMap()
 
         return buildMap {
             runCatching { bundle.keySet() }.getOrNull().orEmpty().forEach { key ->
@@ -144,7 +142,17 @@ class RttRanger(private val context: Context) {
      */
     val azCapability: AzCapability
         get() {
-            val related = rttCharacteristics().filterKeys { key ->
+            val characteristics = rttCharacteristics()
+
+            // The platform names this flag itself from API 35, so ask it rather
+            // than guessing at the key. Everything below is the fallback for
+            // older releases, where the constant does not exist to be read.
+            if (Build.VERSION.SDK_INT >= API_VANILLA_ICE_CREAM) {
+                val key = WifiRttManager.CHARACTERISTICS_KEY_BOOLEAN_NTB_INITIATOR
+                characteristics[key]?.let { return AzCapability(it, key) }
+            }
+
+            val related = characteristics.filterKeys { key ->
                 key.contains("ntb", ignoreCase = true) || key.contains("az", ignoreCase = true)
             }
             if (related.isEmpty()) return AzCapability(supported = false, sourceKey = null)
@@ -403,10 +411,8 @@ class RttRanger(private val context: Context) {
      * Advisory only, exactly as the 802.11mc flag is — the probe asks anyway.
      */
     private fun android.net.wifi.ScanResult.advertisesAz(): Boolean =
-        runCatching {
-            android.net.wifi.ScanResult::class.java
-                .getMethod("is80211azNtbResponder").invoke(this) as? Boolean
-        }.getOrNull() ?: false
+        Build.VERSION.SDK_INT >= API_VANILLA_ICE_CREAM &&
+            runCatching { is80211azNtbResponder }.getOrDefault(false)
 
     /**
      * Whether this measurement came from an 802.11az exchange rather than an
@@ -415,10 +421,8 @@ class RttRanger(private val context: Context) {
      * trust it.
      */
     private fun RangingResult.cameFrom80211az(): Boolean =
-        runCatching {
-            RangingResult::class.java
-                .getMethod("is80211azNtbMeasurement").invoke(this) as? Boolean
-        }.getOrNull() ?: false
+        Build.VERSION.SDK_INT >= API_VANILLA_ICE_CREAM &&
+            runCatching { is80211azNtbMeasurement }.getOrDefault(false)
 
     @RequiresApi(Build.VERSION_CODES.P)
     private fun RangingResult.toMeasurement(): RttMeasurement? {
@@ -463,5 +467,8 @@ class RttRanger(private val context: Context) {
          * a router in the same building is what this is for.
          */
         const val MAX_SOLO_RETRIES = 10
+
+        /** Android 15, where the 802.11az reporting surface arrived. */
+        const val API_VANILLA_ICE_CREAM = 35
     }
 }

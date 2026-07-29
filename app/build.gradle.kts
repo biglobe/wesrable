@@ -6,7 +6,11 @@ plugins {
 
 android {
     namespace = "com.wesrable.positioning"
-    compileSdk = 34
+    // 35 rather than 34 so the 802.11az surface can be called by name instead
+    // of by reflection. targetSdk deliberately stays at 34: compiling against
+    // a newer platform only unlocks its APIs, whereas targeting it opts into
+    // its behaviour changes, and nothing here needs those.
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.wesrable.positioning"
