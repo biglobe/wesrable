@@ -33,6 +33,8 @@ fun RttCard(
     probing: Boolean,
     probeRun: Boolean,
     onProbe: () -> Unit,
+    azInitiatorSupported: Boolean,
+    characteristics: Map<String, Boolean>,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -90,6 +92,48 @@ fun RttCard(
             }
 
             if (supportedByDevice) {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Text("802.11az", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "802.11az is the successor to 802.11mc — tighter, and built to serve " +
+                        "many clients at once. It is not a separate request: the platform " +
+                        "negotiates it inside an ordinary ranging call when both ends can, " +
+                        "so the probe below has always been attempting it. What was missing " +
+                        "was knowing whether it happened.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    if (azInitiatorSupported) {
+                        "This phone can initiate 802.11az. Any access point that supports it " +
+                            "will range over az rather than mc, and the probe marks which."
+                    } else {
+                        "This phone reports no 802.11az initiator support, so ranging here " +
+                            "can only ever use the older 802.11mc. That is a property of the " +
+                            "phone's WiFi chipset and firmware, not of the building."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                if (characteristics.isNotEmpty()) {
+                    Text(
+                        "Radio reports: " + characteristics.entries
+                            .sortedBy { it.key }
+                            .joinToString("  ") { (key, on) ->
+                                "${key.substringAfterLast('_')}=${if (on) "yes" else "no"}"
+                            },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                } else {
+                    Text(
+                        "The radio exposes no capability list on this Android version " +
+                            "(it arrived in Android 13), so az support cannot be read " +
+                            "ahead of time — only observed in a result.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Text("Ask them directly", style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -179,7 +223,7 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
                 probe.ssid.take(16),
                 probe.rssiDbm,
                 when (probe.status) {
-                    RttProbeStatus.RANGED -> "RANGED"
+                    RttProbeStatus.RANGED -> if (probe.rangedVia80211az) "RANGED az" else "RANGED mc"
                     RttProbeStatus.NO_DISTANCE -> "no distance"
                     RttProbeStatus.NOT_SUPPORTED -> "refused"
                     RttProbeStatus.FAILED -> "no answer"
@@ -195,11 +239,26 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
                     // placeholder recognisable as one.
                     RttProbeStatus.NO_DISTANCE ->
                         "returned %.0f m".format(probe.distanceMeters ?: 0.0)
-                    else -> if (probe.advertisedResponder) "(advertised 11mc)" else ""
+                    else -> when {
+                        probe.advertisedAzResponder -> "(advertised 11az)"
+                        probe.advertisedResponder -> "(advertised 11mc)"
+                        else -> ""
+                    }
                 },
             ),
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
+        )
+    }
+
+    val advertisedAz = probes.count { it.advertisedAzResponder }
+    val rangedAz = probes.count { it.rangedVia80211az }
+    if (advertisedAz > 0 || rangedAz > 0) {
+        Text(
+            "802.11az: $advertisedAz access point${if (advertisedAz == 1) "" else "s"} " +
+                "advertise it, $rangedAz ranged over it.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 

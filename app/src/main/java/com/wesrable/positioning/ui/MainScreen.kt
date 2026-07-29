@@ -155,6 +155,8 @@ fun MainScreen(
                     probing = state.rttProbing,
                     probeRun = state.rttProbeRun,
                     onProbe = { viewModel.probeRtt() },
+                    azInitiatorSupported = state.azInitiatorSupported,
+                    characteristics = state.rttCharacteristics,
                 )
             }
             item {

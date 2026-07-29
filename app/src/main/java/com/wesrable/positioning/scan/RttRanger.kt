@@ -84,6 +84,52 @@ class RttRanger(private val context: Context) {
     fun accessPointsInRange(): Int =
         runCatching { wifiManager?.scanResults?.size }.getOrNull() ?: 0
 
+    /**
+     * What the radio itself claims it can do.
+     *
+     * `getRttCharacteristics()` returns a bundle of boolean capability flags —
+     * one-sided RTT, LCI/LCR location reporting, and from API 35 whether this
+     * phone can act as an 802.11az non-trigger-based initiator. The keys are
+     * read and reported verbatim rather than being looked up by constant,
+     * because the set grows with each platform release and a hardcoded list
+     * would silently omit whatever was added last.
+     *
+     * Reached by reflection: the app compiles against API 34, and naming the
+     * newer symbols directly would not build while querying them at runtime
+     * works perfectly well on the devices that have them.
+     */
+    fun rttCharacteristics(): Map<String, Boolean> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return emptyMap()
+        val manager = rttManager ?: return emptyMap()
+        val bundle = runCatching {
+            WifiRttManager::class.java.getMethod("getRttCharacteristics").invoke(manager)
+                as? android.os.Bundle
+        }.getOrNull() ?: return emptyMap()
+
+        return buildMap {
+            runCatching { bundle.keySet() }.getOrNull().orEmpty().forEach { key ->
+                val value = runCatching { @Suppress("DEPRECATION") bundle.get(key) }.getOrNull()
+                if (value is Boolean) put(key, value)
+            }
+        }
+    }
+
+    /**
+     * Whether this phone can start an 802.11az ranging exchange.
+     *
+     * 802.11az is the successor to 802.11mc: better accuracy, and designed to
+     * scale to many clients at once. It is not a separate call — the platform
+     * negotiates it inside an ordinary ranging request when both ends support
+     * it — so what matters is knowing whether the phone is capable, and then
+     * which standard each measurement actually came from.
+     *
+     * Matched on the key rather than a constant for the reason above.
+     */
+    val isAzInitiatorSupported: Boolean
+        get() = rttCharacteristics().any { (key, enabled) ->
+            enabled && key.contains("NTB", ignoreCase = true)
+        }
+
     /** Whether it is switched on right now (the user can disable it system-wide). */
     val isAvailable: Boolean
         @RequiresApi(Build.VERSION_CODES.P)
@@ -139,6 +185,7 @@ class RttRanger(private val context: Context) {
         val advertised = batch.associate { scan ->
             scan.BSSID to runCatching { scan.is80211mcResponder }.getOrDefault(false)
         }
+        val advertisedAz = batch.associate { scan -> scan.BSSID to scan.advertisesAz() }
 
         var askable = 0
         val request = runCatching {
@@ -179,6 +226,8 @@ class RttRanger(private val context: Context) {
                 ssid = scan.SSID.orEmpty().ifBlank { "(hidden)" },
                 rssiDbm = scan.level,
                 advertisedResponder = advertised[bssid] == true,
+                advertisedAzResponder = advertisedAz[bssid] == true,
+                rangedVia80211az = measurement?.is80211az == true,
                 status = when {
                     // A result can report success and still contain no
                     // measurement, so the number is checked rather than the
@@ -304,6 +353,28 @@ class RttRanger(private val context: Context) {
             }
         }
 
+    /**
+     * Whether this access point advertises 802.11az non-trigger-based ranging.
+     * Advisory only, exactly as the 802.11mc flag is — the probe asks anyway.
+     */
+    private fun android.net.wifi.ScanResult.advertisesAz(): Boolean =
+        runCatching {
+            android.net.wifi.ScanResult::class.java
+                .getMethod("is80211azNtbResponder").invoke(this) as? Boolean
+        }.getOrNull() ?: false
+
+    /**
+     * Whether this measurement came from an 802.11az exchange rather than an
+     * 802.11mc one. The distinction matters: az is the newer standard and
+     * reports tighter, so knowing which produced a figure says how much to
+     * trust it.
+     */
+    private fun RangingResult.cameFrom80211az(): Boolean =
+        runCatching {
+            RangingResult::class.java
+                .getMethod("is80211azNtbMeasurement").invoke(this) as? Boolean
+        }.getOrNull() ?: false
+
     @RequiresApi(Build.VERSION_CODES.P)
     private fun RangingResult.toMeasurement(): RttMeasurement? {
         if (status != RangingResult.STATUS_SUCCESS) return null
@@ -318,6 +389,7 @@ class RttRanger(private val context: Context) {
             rssiDbm = rssi,
             attemptedMeasurements = numAttemptedMeasurements,
             successfulMeasurements = numSuccessfulMeasurements,
+            is80211az = cameFrom80211az(),
         )
     }
 

@@ -740,6 +740,30 @@ The card then calls out the two disagreements between claim and reality: access
 points that ranged without advertising support (the case the old count missed
 entirely) and ones that advertised it but stayed silent.
 
+**802.11az.** The successor to 802.11mc: tighter, and designed to serve many
+clients at once. It is *not* a separate request — the platform negotiates it
+inside an ordinary ranging call when both ends support it — so the probe has
+been attempting az from the day it was written. What was missing was knowing
+whether it happened.
+
+Three things are now read and reported:
+
+- Whether the phone can initiate az, from `WifiRttManager.getRttCharacteristics()`.
+  The whole capability bundle is shown rather than a hardcoded lookup, since the
+  set of flags grows with each platform release and a fixed list would silently
+  omit whatever arrived last.
+- Whether each access point advertises az, via `ScanResult.is80211azNtbResponder()`.
+  Advisory only, exactly as the mc flag is — the probe asks regardless.
+- Which standard actually produced each measurement, via
+  `RangingResult.is80211azNtbMeasurement()`, so a ranged row reads `RANGED az`
+  or `RANGED mc` rather than leaving it to be guessed.
+
+All three arrived in API 35 and this app compiles against 34, so they are
+reached by reflection. Bumping `compileSdk` would be tidier, but AGP 8.5.2
+officially supports 35 only from 8.6, and CI is the only place the Android half
+gets compiled at all — a build break there costs a full round trip, while
+reflection degrades to "not supported" on exactly the devices that lack it.
+
 **A success status is not a distance.** The first real run of this probe
 reported six access points "RANGED" — and every one of them returned exactly
 15000.00 m, at signal strengths from -32 to -73 dBm. A router at -32 dBm is in

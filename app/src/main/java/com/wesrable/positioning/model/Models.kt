@@ -47,6 +47,12 @@ data class RttMeasurement(
     val rssiDbm: Int,
     val attemptedMeasurements: Int,
     val successfulMeasurements: Int,
+    /**
+     * True when this came from an 802.11az exchange rather than an 802.11mc
+     * one. az is the newer standard and reports tighter, so which produced a
+     * figure says how far to trust it.
+     */
+    val is80211az: Boolean = false,
 ) {
     /**
      * Whether this is a distance at all, rather than a status code wearing one.
@@ -116,6 +122,10 @@ data class RttProbe(
     val rssiDbm: Int,
     /** What the access point claimed in its beacon, before being asked. */
     val advertisedResponder: Boolean,
+    /** The same claim for 802.11az, the successor standard. */
+    val advertisedAzResponder: Boolean = false,
+    /** Which standard actually produced the measurement, if there was one. */
+    val rangedVia80211az: Boolean = false,
     val status: RttProbeStatus,
     /** Whatever came back, believable or not — shown so a placeholder is visible. */
     val distanceMeters: Double? = null,
