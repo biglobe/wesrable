@@ -147,6 +147,7 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
     }
 
     val ranged = probes.count { it.status == RttProbeStatus.RANGED }
+    val placeholder = probes.count { it.status == RttProbeStatus.NO_DISTANCE }
     val refused = probes.count { it.status == RttProbeStatus.NOT_SUPPORTED }
     val failed = probes.count { it.status == RttProbeStatus.FAILED }
 
@@ -158,6 +159,12 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
             ranged > 0 -> "$ranged access point${if (ranged == 1) "" else "s"} answered. " +
                 "Not enough to trilaterate on its own, but it proves the path works here — " +
                 "one more capable router would make this the sharpest signal in the app."
+            placeholder > 0 -> "$placeholder access point${if (placeholder == 1) "" else "s"} " +
+                "replied, but with a placeholder where the distance should be — the same " +
+                "value regardless of how near or far they are, which is a status code " +
+                "rather than a measurement. They are not true 802.11mc responders. " +
+                "$refused refused outright and $failed did not answer."
+
             else -> "$refused refused outright and $failed failed to answer. No ranging " +
                 "is available in this building, and now that is measured rather than " +
                 "inferred from a beacon flag."
@@ -173,11 +180,23 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
                 probe.rssiDbm,
                 when (probe.status) {
                     RttProbeStatus.RANGED -> "RANGED"
+                    RttProbeStatus.NO_DISTANCE -> "no distance"
                     RttProbeStatus.NOT_SUPPORTED -> "refused"
                     RttProbeStatus.FAILED -> "no answer"
                 },
-                probe.distanceMeters?.let { "%.2f m".format(it) }
-                    ?: if (probe.advertisedResponder) "(advertised 11mc)" else "",
+                when (probe.status) {
+                    RttProbeStatus.RANGED -> "%.2f m +/-%.2f (%d/%d)".format(
+                        probe.distanceMeters ?: 0.0,
+                        probe.standardDeviationMeters ?: 0.0,
+                        probe.successfulMeasurements,
+                        probe.attemptedMeasurements,
+                    )
+                    // Showing the rejected number matters: it is what makes a
+                    // placeholder recognisable as one.
+                    RttProbeStatus.NO_DISTANCE ->
+                        "returned %.0f m".format(probe.distanceMeters ?: 0.0)
+                    else -> if (probe.advertisedResponder) "(advertised 11mc)" else ""
+                },
             ),
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
@@ -189,6 +208,16 @@ private fun ProbeResults(probes: List<RttProbe>, probeRun: Boolean, probing: Boo
     }
     val silentButRanged = probes.count {
         !it.advertisedResponder && it.status == RttProbeStatus.RANGED
+    }
+    if (ranged == 0 && placeholder > 0) {
+        Text(
+            "So RTT is not usable here after all. Every reply came through the " +
+                "non-802.11mc path, which reports success without measuring anything. " +
+                "One genuine 802.11mc router — Google/Nest WiFi, or most mesh systems " +
+                "since about 2019 — would change that.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
     if (silentButRanged > 0 || advertisedButSilent > 0) {
         Text(

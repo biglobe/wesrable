@@ -47,12 +47,47 @@ data class RttMeasurement(
     val rssiDbm: Int,
     val attemptedMeasurements: Int,
     val successfulMeasurements: Int,
-)
+) {
+    /**
+     * Whether this is a distance at all, rather than a status code wearing one.
+     *
+     * A ranging result can carry `STATUS_SUCCESS` and still contain no real
+     * measurement: access points submitted through the non-802.11mc path
+     * routinely return a large fixed placeholder, and a real survey here saw
+     * six of them report exactly 15000 m each while sitting between -32 and
+     * -73 dBm. Treating that as a fix would have sent someone off to measure
+     * router positions for a trilateration that could never work, so the
+     * number is checked against physics before it is believed: an access point
+     * audible indoors is not kilometres away, and a burst that never completed
+     * has nothing to report.
+     */
+    val isPlausibleDistance: Boolean
+        get() = successfulMeasurements > 0 &&
+            distanceMeters > 0.0 &&
+            distanceMeters <= MAX_PLAUSIBLE_DISTANCE_METERS
+
+    companion object {
+        /**
+         * Beyond this, indoors, the reading is a sentinel rather than a
+         * distance. Generous on purpose — a large building's far corner is
+         * tens of metres, never hundreds.
+         */
+        const val MAX_PLAUSIBLE_DISTANCE_METERS = 150.0
+    }
+}
 
 /** What happened when one access point was actually asked to range. */
 enum class RttProbeStatus {
-    /** It answered with a distance. This is the one that matters. */
+    /** It answered with a real, physically possible distance. */
     RANGED,
+
+    /**
+     * It answered, but the distance it returned is not a distance — typically
+     * a large fixed placeholder from an access point that is not a true
+     * 802.11mc responder. Counted apart from [RANGED] because it looks like
+     * success everywhere except in the number itself.
+     */
+    NO_DISTANCE,
 
     /** It replied that it cannot do 802.11mc ranging. A definite no. */
     NOT_SUPPORTED,
@@ -82,8 +117,11 @@ data class RttProbe(
     /** What the access point claimed in its beacon, before being asked. */
     val advertisedResponder: Boolean,
     val status: RttProbeStatus,
+    /** Whatever came back, believable or not — shown so a placeholder is visible. */
     val distanceMeters: Double? = null,
     val standardDeviationMeters: Double? = null,
+    val successfulMeasurements: Int = 0,
+    val attemptedMeasurements: Int = 0,
 )
 
 /** A reference point (AP or beacon) whose real-world coordinates are known via calibration. */

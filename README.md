@@ -740,6 +740,23 @@ The card then calls out the two disagreements between claim and reality: access
 points that ranged without advertising support (the case the old count missed
 entirely) and ones that advertised it but stayed silent.
 
+**A success status is not a distance.** The first real run of this probe
+reported six access points "RANGED" — and every one of them returned exactly
+15000.00 m, at signal strengths from -32 to -73 dBm. A router at -32 dBm is in
+the same room; 15 km is not a measurement, it is a placeholder. All six had come
+through the non-802.11mc path, which reports `STATUS_SUCCESS` without performing
+a time-of-flight exchange.
+
+The card had therefore announced "enough to trilaterate outright", which would
+have sent someone off to measure router positions for a fix that could never
+work. Results are now checked against physics before being believed
+(`RttMeasurement.isPlausibleDistance`): a completed burst, a positive distance,
+and no more than `MAX_PLAUSIBLE_DISTANCE_METERS`. Anything else is reported as
+**no distance** — with the rejected number shown, since seeing the same value
+against every access point is what makes a placeholder recognisable. The same
+guard filters the continuous ranging list, which would otherwise have published
+15 km readings into the live measurements.
+
 This is a button rather than part of the 2 s ranging loop. Ranging costs power
 and the platform rate-limits it, and "does this building support RTT" is a
 question that needs asking once, not twice a second.

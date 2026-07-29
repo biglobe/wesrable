@@ -180,12 +180,18 @@ class RttRanger(private val context: Context) {
                 rssiDbm = scan.level,
                 advertisedResponder = advertised[bssid] == true,
                 status = when {
-                    measurement != null -> RttProbeStatus.RANGED
+                    // A result can report success and still contain no
+                    // measurement, so the number is checked rather than the
+                    // status. See RttMeasurement.isPlausibleDistance.
+                    measurement?.isPlausibleDistance == true -> RttProbeStatus.RANGED
+                    measurement != null -> RttProbeStatus.NO_DISTANCE
                     unsupported.contains(bssid) -> RttProbeStatus.NOT_SUPPORTED
                     else -> RttProbeStatus.FAILED
                 },
                 distanceMeters = measurement?.distanceMeters,
                 standardDeviationMeters = measurement?.standardDeviationMeters,
+                successfulMeasurements = measurement?.successfulMeasurements ?: 0,
+                attemptedMeasurements = measurement?.attemptedMeasurements ?: 0,
             )
         }
     }
@@ -279,7 +285,12 @@ class RttRanger(private val context: Context) {
                         executor,
                         object : RangingResultCallback() {
                             override fun onRangingResults(results: List<RangingResult>) {
-                                trySend(results.mapNotNull { it.toMeasurement() })
+                                // Same guard as the probe: a success status is
+                                // not a promise that the distance is real.
+                                trySend(
+                                    results.mapNotNull { it.toMeasurement() }
+                                        .filter { it.isPlausibleDistance }
+                                )
                             }
 
                             override fun onRangingFailure(code: Int) {
