@@ -167,6 +167,37 @@ class RttRanger(private val context: Context) {
     /** Convenience for the common question. See [azCapability] for the source. */
     val isAzInitiatorSupported: Boolean get() = azCapability.supported
 
+    /**
+     * Whether this device carries Android 16's unified ranging stack
+     * (`android.ranging`), which is a different API from the one this class
+     * otherwise uses.
+     *
+     * The distinction matters for 802.11az specifically. Everything else here
+     * goes through `WifiRttManager`, the 802.11mc-era FTM interface, where az
+     * appears only as one capability flag bolted on in API 35. Android 16 moved
+     * ranging to a technology-agnostic stack — UWB, BLE channel sounding, BLE
+     * RSSI and WiFi RTT behind one session API, with parameters dedicated to
+     * 802.11az non-trigger-based ranging. A device may therefore report no az
+     * support through the legacy flag while exposing it properly through the
+     * new one, which is exactly the contradiction worth detecting rather than
+     * arguing about.
+     *
+     * Checked by feature string and service lookup rather than by class
+     * reference, so it costs nothing and needs no further toolchain jump. It
+     * reports only whether the door exists — walking through it means
+     * compileSdk 36 and a real session implementation.
+     */
+    val hasUnifiedRangingStack: Boolean
+        get() = runCatching {
+            context.packageManager.hasSystemFeature(FEATURE_RANGING)
+        }.getOrDefault(false)
+
+    /** Whether the new stack's system service actually resolves on this device. */
+    val unifiedRangingServiceAvailable: Boolean
+        get() = Build.VERSION.SDK_INT >= API_BAKLAVA &&
+            runCatching { context.getSystemService(RANGING_SERVICE) != null }
+                .getOrDefault(false)
+
     /** Whether it is switched on right now (the user can disable it system-wide). */
     val isAvailable: Boolean
         @RequiresApi(Build.VERSION_CODES.P)
@@ -470,5 +501,14 @@ class RttRanger(private val context: Context) {
 
         /** Android 15, where the 802.11az reporting surface arrived. */
         const val API_VANILLA_ICE_CREAM = 35
+
+        /** Android 16, where ranging moved to a technology-agnostic stack. */
+        const val API_BAKLAVA = 36
+
+        /** `PackageManager.FEATURE_RANGING`, as a literal for compileSdk 35. */
+        const val FEATURE_RANGING = "android.hardware.ranging"
+
+        /** `Context.RANGING_SERVICE`, likewise. */
+        const val RANGING_SERVICE = "ranging"
     }
 }

@@ -35,6 +35,8 @@ fun RttCard(
     onProbe: () -> Unit,
     azInitiatorSupported: Boolean,
     azCapabilityKey: String?,
+    unifiedRangingStack: Boolean,
+    unifiedRangingService: Boolean,
     characteristics: Map<String, Boolean>,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -147,6 +149,30 @@ fun RttCard(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+
+                Text(
+                    when {
+                        unifiedRangingStack || unifiedRangingService ->
+                            "This device also carries Android 16's unified ranging stack " +
+                                "(android.ranging), which is a different API from the one " +
+                                "everything above uses. That stack has parameters dedicated " +
+                                "to 802.11az, so az may be available there even though the " +
+                                "older WifiRttManager flag says otherwise. Nothing in this " +
+                                "app uses it yet."
+                        else ->
+                            "No unified ranging stack (android.ranging) on this device, so " +
+                                "WifiRttManager is the only ranging API available and the " +
+                                "flag above is the whole answer."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(
+                    "android.hardware.ranging feature: ${if (unifiedRangingStack) "yes" else "no"}" +
+                        "   ranging service: ${if (unifiedRangingService) "resolves" else "absent"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
 
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Text("Ask them directly", style = MaterialTheme.typography.titleSmall)

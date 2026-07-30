@@ -157,6 +157,8 @@ fun MainScreen(
                     onProbe = { viewModel.probeRtt() },
                     azInitiatorSupported = state.azInitiatorSupported,
                     azCapabilityKey = state.azCapabilityKey,
+                    unifiedRangingStack = state.unifiedRangingStack,
+                    unifiedRangingService = state.unifiedRangingService,
                     characteristics = state.rttCharacteristics,
                 )
             }

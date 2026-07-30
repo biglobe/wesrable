@@ -88,6 +88,8 @@ data class UiState(
     val rttProbeRun: Boolean = false,
     val azInitiatorSupported: Boolean = false,
     val azCapabilityKey: String? = null,
+    val unifiedRangingStack: Boolean = false,
+    val unifiedRangingService: Boolean = false,
     val rttCharacteristics: Map<String, Boolean> = emptyMap(),
     val surveying: Boolean = false,
     val surveyPointCount: Int = 0,
@@ -170,6 +172,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uwbSupportedByDevice = rttRanger.isUwbSupportedByDevice,
             azInitiatorSupported = rttRanger.azCapability.supported,
             azCapabilityKey = rttRanger.azCapability.sourceKey,
+            unifiedRangingStack = rttRanger.hasUnifiedRangingStack,
+            unifiedRangingService = rttRanger.unifiedRangingServiceAvailable,
             rttCharacteristics = rttRanger.rttCharacteristics(),
         )
     )
